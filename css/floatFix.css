@@ -1,0 +1,10 @@
+/* universal float fix */
+.group:before,
+.group:after {
+	content: "\0020";
+	display: block;
+	height: 0;
+	overflow: hidden;
+}
+.group:after { clear: both; }
+.group{ zoom: 1; }
