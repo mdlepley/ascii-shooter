@@ -1,94 +1,80 @@
 /* *****************************
- * Main CSS file
+ * ASCII Shooter - Main CSS
  *
  * Author: Matt Lepley
- * Version: 1.0
- *
+ * Version: 2.0
  * *****************************
+ */
 
- ====== Table of Contents ======
- 
- 1. Global Styles
- 2. Navigation
- 3. Content
- 4. Footer
- 5. Miscellaneous
- 
- 
- ====== Style Guide ============
- 
-	-- Colors --
-	
-	-- Typography --
-	
-
- ******************************/
-
-/*
-	====== Global Styles ======
-*/
-html{
-
+/* Global Styles */
+html {
+  box-sizing: border-box;
 }
 
-body{
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
 
+body {
+  font-family: "Segoe UI", Candara, "Bitstream Vera Sans", "DejaVu Sans",
+    "Trebuchet MS", Verdana, sans-serif;
+  line-height: 1.5;
 }
 
 /* HUD */
 #hud {
-	position: fixed;
-	top: 0;
-	right: 0;
-	padding: 20px;
-	text-align: right;
+  position: fixed;
+  top: 0;
+  right: 0;
+  padding: 20px;
+  text-align: right;
 }
 
 #hud .ui-current-weapon {
-	font-weight: bold;
-	color: lightblue;
+  font-weight: bold;
+  color: lightblue;
 }
-
 
 /* Player Ship */
 #player-ship {
-	position: absolute;
-	left: 50%;
-	bottom: 10px;
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
 }
 
 #player-ship > p {
-	text-align: center;
+  text-align: center;
 }
 
 #player-ship > .assets > div,
 #player-ship > .assets > p {
-	display: none;
+  display: none;
 }
 
 #player-ship #thrust {
-	color: orange;
+  color: orange;
 }
 
 #player-ship #thrust,
 #player-ship .weapon,
 .shot-fired,
 .fx {
-	position: absolute;
+  position: absolute;
 }
 
 #sniper {
-	color: green;
+  color: green;
 }
 
 #vulcan {
-	color: blue;
+  color: blue;
 }
-
 
 /* Enemies */
 .enemy {
-	position: fixed;
-	top: 100px;
-	left: 100px;
+  position: fixed;
+  top: 100px;
+  left: 100px;
 }
