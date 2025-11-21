@@ -1,20 +1,30 @@
 # ASCII Shmup Revival - Game Development Bible
-**Version:** 1.0 (Minimal Specification)
+**Version:** 1.1 (Minimal Specification - Level Themes Added)
 **Date:** 2025-11-21
 **Purpose:** Actionable specifications for Canvas-based implementation
+
+**Recent Updates:**
+- Added comprehensive level themes (Daybreak Assault, Maritime, Orbital Factory, Deep Space)
+- Level 1 "Daybreak Assault" fully specified with sunny sky, clouds, and green pastures
+- Updated color palette for bright daytime environments
+- Added detailed parallax background system with cloud generation
+- Environmental details (birds, sun) specified
 
 ---
 
 ## Table of Contents
 1. [Core Game Parameters](#core-game-parameters)
-2. [Visual Style Guide](#visual-style-guide)
-3. [Color Palette](#color-palette)
-4. [Player Ship Specification](#player-ship-specification)
-5. [Weapon Systems](#weapon-systems)
-6. [Enemy Specifications](#enemy-specifications)
-7. [Visual Effects](#visual-effects)
-8. [Audio Design Guidelines](#audio-design-guidelines)
-9. [Control Schemes](#control-schemes)
+2. [Level Themes](#level-themes)
+3. [Visual Style Guide](#visual-style-guide)
+4. [Color Palette](#color-palette)
+5. [Player Ship Specification](#player-ship-specification)
+6. [Weapon Systems](#weapon-systems)
+7. [Enemy Specifications](#enemy-specifications)
+8. [Visual Effects](#visual-effects)
+9. [Audio Design Guidelines](#audio-design-guidelines)
+10. [Control Schemes](#control-schemes)
+11. [Level 1 Background System](#level-1-background-system)
+12. [Asset Naming Conventions](#asset-naming-conventions)
 
 ---
 
@@ -49,6 +59,68 @@
 - **Minimum FPS:** 60
 - **Maximum entities on screen:** 100
 - **Target render time per frame:** <16ms
+
+---
+
+## Level Themes
+
+### Level 1: "Daybreak Assault" - Clouds & Green Pastures
+**Setting:** Flying through a beautiful sunny day, above rolling green fields and farmland
+
+**Visual Theme:**
+- Bright, cheerful color palette
+- Fluffy white clouds drifting by
+- Green pastures visible far below
+- Occasional birds or environmental details
+- Clear blue sky gradient
+
+**Background Layers (Parallax):**
+1. **Sky Layer** - Light blue gradient (#87CEEB to #4682B4)
+2. **Cloud Layer (Far)** - Large, slow-moving clouds using `░▒▓` characters
+3. **Cloud Layer (Near)** - Faster, puffier clouds for depth
+4. **Ground Layer** - Distant green fields (subtle, far below)
+
+**Atmosphere:**
+- Peaceful beginning that contrasts with incoming enemy forces
+- Pastoral, almost idyllic before the chaos begins
+
+**Enemy Types for Level 1:**
+- Scout fighters (red/orange to stand out against blue sky)
+- Gunships
+- Kamikaze drones
+
+---
+
+### Level 2: "Sea Thunder" - Maritime Battle (Future)
+**Setting:** Low altitude combat over a naval battlefield with warships below
+
+**Planned Elements:**
+- Ocean waves (ASCII wave patterns)
+- Battleships firing flak
+- Aircraft carriers as platforms
+- Water splashes and naval combat
+
+---
+
+### Level 3: "Factory Zero" - Orbital Manufacturing Station (Future)
+**Setting:** Industrial space station with mechanical hazards
+
+**Planned Elements:**
+- Metallic structures and girders
+- Conveyor belts and machinery
+- Industrial enemies (robotic)
+- Hazardous environmental elements
+
+---
+
+### Level 4: "Deep Void" - Outer Space (Future)
+**Setting:** Classic deep space shmup environment
+
+**Planned Elements:**
+- Star field backgrounds
+- Asteroids and debris
+- Alien spacecraft
+- Nebula effects
 
 ---
 
@@ -90,7 +162,7 @@
 
 ## Color Palette
 
-### Primary Colors
+### Primary Colors (All Levels)
 ```javascript
 {
   "player": "#00ffff",          // Cyan - player ship
@@ -98,21 +170,38 @@
   "playerWeapon2": "#0099ff",   // Blue - vulcan
   "playerSpecial": "#ffaa00",   // Orange - rockets
 
-  "enemy1": "#ff0000",          // Red - basic enemies
-  "enemy2": "#ff00ff",          // Magenta - advanced enemies
+  "enemy1": "#ff3300",          // Red-Orange - basic enemies (pops against sky)
+  "enemy2": "#cc0000",          // Dark Red - advanced enemies
   "enemyWeapon": "#ffff00",     // Yellow - enemy projectiles
 
   "explosion": "#ff6600",       // Orange - explosions
   "particles": "#ffffff",       // White - debris/particles
 
-  "hud": "#00ffff",            // Cyan - UI elements
-  "hudWarning": "#ff0000",     // Red - low health warning
-
-  "background1": "#1a1a2e",    // Dark blue-grey - space
-  "background2": "#16213e",    // Slightly lighter - parallax layer
-  "stars": "#ffffff"           // White - star field
+  "hud": "#ffffff",             // White - UI elements
+  "hudWarning": "#ff0000",      // Red - low health warning
+  "hudText": "#000000"          // Black - contrasts with bright backgrounds
 }
 ```
+
+### Level 1: "Daybreak Assault" - Colors
+```javascript
+{
+  "skyTop": "#87CEEB",          // Light sky blue - top of screen
+  "skyBottom": "#4682B4",       // Steel blue - bottom gradient
+  "cloudsFar": "#f0f8ff",       // Alice blue - distant clouds
+  "cloudsNear": "#ffffff",      // Pure white - close clouds
+  "cloudShadow": "#d3d3d3",     // Light grey - cloud shading
+  "ground": "#228b22",          // Forest green - distant pastures
+  "groundDetail": "#32cd32",    // Lime green - field highlights
+  "sun": "#ffff00",             // Yellow - optional sun element
+  "birds": "#8b4513"            // Brown - optional environmental details
+}
+```
+
+### Future Level Color Palettes
+**Level 2 - Maritime:** Ocean blues, wave whites, battleship greys
+**Level 3 - Orbital Factory:** Industrial greys, warning yellows, metal silvers
+**Level 4 - Deep Space:** Dark backgrounds, star whites, nebula purples/blues
 
 ---
 
@@ -564,6 +653,115 @@ With Thrust (animated - alternates every 100ms):
 
 ---
 
+## Level 1 Background System
+
+### Parallax Layers (Front to Back)
+```javascript
+{
+  "layers": [
+    {
+      "name": "Sky Gradient",
+      "type": "gradient",
+      "colorTop": "#87CEEB",
+      "colorBottom": "#4682B4",
+      "scrollSpeed": 0,
+      "zIndex": 0
+    },
+    {
+      "name": "Far Clouds",
+      "type": "ascii_pattern",
+      "pattern": "░▒",
+      "color": "#f0f8ff",
+      "scrollSpeed": 20,
+      "density": 0.3,
+      "yRange": [50, 250],
+      "zIndex": 1
+    },
+    {
+      "name": "Near Clouds",
+      "type": "ascii_pattern",
+      "pattern": "▒▓█",
+      "color": "#ffffff",
+      "shadowColor": "#d3d3d3",
+      "scrollSpeed": 40,
+      "density": 0.2,
+      "yRange": [100, 400],
+      "zIndex": 2
+    },
+    {
+      "name": "Ground Layer",
+      "type": "ascii_pattern",
+      "pattern": "═≡-",
+      "color": "#228b22",
+      "highlightColor": "#32cd32",
+      "scrollSpeed": 80,
+      "yPosition": 550,
+      "parallaxDepth": 0.9,
+      "zIndex": 3
+    }
+  ]
+}
+```
+
+### Cloud Generation
+```javascript
+{
+  "cloudTypes": [
+    {
+      "size": "small",
+      "ascii": "░░▒░",
+      "width": 4,
+      "spawnChance": 0.4
+    },
+    {
+      "size": "medium",
+      "ascii": [
+        " ░▒▓▒░ ",
+        "░▒▓█▓▒░"
+      ],
+      "width": 8,
+      "spawnChance": 0.4
+    },
+    {
+      "size": "large",
+      "ascii": [
+        "  ░▒▓▓▒░  ",
+        " ░▒▓██▓▒░ ",
+        "░▒▓████▓▒░"
+      ],
+      "width": 12,
+      "spawnChance": 0.2
+    }
+  ],
+  "spawnRate": 2000,            // milliseconds between cloud spawns
+  "randomOffset": 1000          // random variance in spawn timing
+}
+```
+
+### Environmental Details (Optional)
+```javascript
+{
+  "birds": {
+    "enabled": true,
+    "ascii": "v",
+    "color": "#8b4513",
+    "flightPattern": "sine_wave",
+    "speed": 80,
+    "spawnChance": 0.1,
+    "flockSize": [1, 5]
+  },
+  "sun": {
+    "enabled": false,           // optional sun in corner
+    "ascii": "☼",
+    "color": "#ffff00",
+    "position": { "x": 700, "y": 100 },
+    "glow": true
+  }
+}
+```
+
+---
+
 ## Asset Naming Conventions
 
 ### File Structure
@@ -586,9 +784,22 @@ With Thrust (animated - alternates every 100ms):
       explosion_small.json
       explosion_large.json
       muzzle_flash.json
+    /backgrounds
+      /level1_daybreak
+        clouds_small.json
+        clouds_medium.json
+        clouds_large.json
+        background_config.json
+      /level2_maritime
+        (future)
+      /level3_orbital
+        (future)
+      /level4_space
+        (future)
   /audio
     /music
-      level_1_theme.ogg
+      level_1_daybreak.ogg
+      level_2_maritime.ogg
       boss_theme.ogg
     /sfx
       laser_sniper.ogg
