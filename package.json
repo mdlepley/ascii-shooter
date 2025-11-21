@@ -1,0 +1,16 @@
+{
+  "name": "ascii-shooter",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "A browser-based ASCII art space shooter game",
+  "author": "Matt Lepley",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
