@@ -72,7 +72,39 @@ Game Development, Browser Game, Retro-Inspired Interactive Entertainment
 
 ---
 
-### **Milestone 2: ASCII Asset Editor**
+### **Milestone 2: Modernized Prototype with Tech Stack Implementation**
+
+**Objective:** Establish the core technical foundation with modern tooling and architecture.
+
+**Deliverables:**
+* **Development Environment:**
+  * Modern build system (Vite/Webpack) with hot-reload
+  * Project structure organized by feature/module
+  * TypeScript configuration (if applicable)
+  
+* **Core Game Systems:**
+  * Game loop with consistent frame timing
+  * Canvas rendering pipeline optimized for ASCII characters
+  * Input handling system supporting **keyboard and gamepad**
+  * Basic entity system (player, enemies, projectiles)
+  * Collision detection framework
+  * Asset loading system that can import JSON-based assets
+  
+* **Player Ship Prototype:**
+  * Controllable player character with smooth movement (keyboard and gamepad)
+  * Basic shooting mechanics
+  * Simple ASCII animation for ship and projectiles
+
+**Success Criteria:**
+* 60 FPS performance on target browsers
+* Responsive controls with no input lag on both keyboard and gamepad
+* Clean, maintainable code architecture
+* Successful rendering of multiple ASCII entities simultaneously
+* Asset loading system ready to integrate with future editor exports
+
+---
+
+### **Milestone 3: ASCII Asset Editor**
 
 **Objective:** Create a dedicated tool for designing, animating, and managing all ASCII art assets used in the game.
 
@@ -111,38 +143,6 @@ Game Development, Browser Game, Retro-Inspired Interactive Entertainment
 * Assets integrate seamlessly into game engine
 * Supports all planned asset types (ships, enemies, bosses, effects, backgrounds)
 * Saves development time compared to hand-coding ASCII art
-
----
-
-### **Milestone 3: Modernized Prototype with Tech Stack Implementation**
-
-**Objective:** Establish the core technical foundation with modern tooling and architecture.
-
-**Deliverables:**
-* **Development Environment:**
-  * Modern build system (Vite/Webpack) with hot-reload
-  * Project structure organized by feature/module
-  * TypeScript configuration (if applicable)
-  
-* **Core Game Systems:**
-  * Game loop with consistent frame timing
-  * Canvas rendering pipeline optimized for ASCII characters
-  * Input handling system supporting **keyboard and gamepad**
-  * Basic entity system (player, enemies, projectiles)
-  * Collision detection framework
-  * Asset loading system integrated with editor exports
-  
-* **Player Ship Prototype:**
-  * Controllable player character with smooth movement (keyboard and gamepad)
-  * Basic shooting mechanics
-  * Simple ASCII animation for ship and projectiles
-
-**Success Criteria:**
-* 60 FPS performance on target browsers
-* Responsive controls with no input lag on both keyboard and gamepad
-* Clean, maintainable code architecture
-* Successful rendering of multiple ASCII entities simultaneously
-* Seamless integration of assets from the ASCII editor
 
 ---
 
