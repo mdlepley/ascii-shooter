@@ -15,37 +15,25 @@
   </head>
 
   <body>
-    <div>
-      <p>WASD to move</p>
-      <p>Spacebar to shoot</p>
-      <p>Press 'E' to switch weapons</p>
-      <p>Press 'R' for rockets</p>
-    </div>
+    <!-- Game Canvas -->
+    <canvas id="game-canvas" width="800" height="600"></canvas>
 
+    <!-- HUD Overlay -->
     <div id="hud">
-      <p id="health"></p>
+      <div id="controls-help">
+        <p>WASD to move | SPACE to shoot | E to switch weapons | R for rockets</p>
+      </div>
+
+      <div id="game-stats">
+        <p id="health">Health: <span>100</span></p>
+        <p id="score">Score: <span>0</span></p>
+      </div>
 
       <ul id="weapons">
-        <li id="ui-sniper-weapon" class="weapon shot1 ui-current-weapon">Sniper Laser</li>
-        <li id="ui-vulcan-weapon" class="weapon shot2">Vulcan 50cal</li>
+        <li id="ui-sniper-weapon" class="weapon ui-current-weapon">Sniper Laser</li>
+        <li id="ui-vulcan-weapon" class="weapon">Vulcan 50cal</li>
         <li id="ui-rocket-weapon" class="special-weapon">Rockets: <span class="ammo">10</span></li>
       </ul>
-    </div>
-
-    <div id="player-ship">
-      <p>&#94;</p>
-      <p>&#60;o&#62;</p>
-
-      <div class="assets">
-        <p id="thrust">&#42;</p>
-        <p id="sniper" class="weapon current-weapon">&#33;</p>
-        <p id="vulcan" class="weapon">&#34;</p>
-        <div id="rocket" class="special-weapon">
-          <p>&#94;</p>
-          <p>&#42;</p>
-        </div>
-        <p id="shot-fx1" class="fx">----(  )----</p>
-      </div>
     </div>
   </body>
 </html>
