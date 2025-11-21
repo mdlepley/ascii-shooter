@@ -128,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Add weapons
   player.weapons = Array.from(document.querySelectorAll("#player-ship .weapon"));
   player.setCurrentWeapon();
-  player.uiWeapons = Array.from(document.querySelectorAll("#hud #weapons").children);
+  player.uiWeapons = Array.from(document.querySelector("#hud #weapons").children);
   player.uiCurrentWeapon = document.querySelector("#hud .ui-current-weapon");
 
   // Add player for debug
