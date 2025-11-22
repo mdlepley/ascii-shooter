@@ -364,7 +364,9 @@ const game = {
   background: null,
   score: 0,
   gameOver: false,
+  victory: false,
   bossTriggered: false,
+  boss: null,
   waveManager: null,
   cloudSpawnTimer: 0,
   assetLoader: null,
@@ -1886,6 +1888,365 @@ class Kamikaze extends Enemy {
 }
 
 // ============================================================================
+// BOSS COMPONENTS
+// ============================================================================
+
+class BossTurret extends Entity {
+  constructor(x, y, boss) {
+    super(x, y);
+    this.type = 'boss_turret';
+    this.boss = boss;
+    this.art = '[O]';
+    this.color = '#ff0000';
+    this.health = 50;
+    this.maxHealth = 50;
+    this.hitboxRadius = 15;
+    this.fireRate = 1500;
+    this.lastFireTime = 0;
+    this.offsetX = 0; // Offset from boss center
+    this.offsetY = 0;
+  }
+
+  update(deltaTime) {
+    // Update position relative to boss
+    if (this.boss && this.boss.active) {
+      this.x = this.boss.x + this.offsetX;
+      this.y = this.boss.y + this.offsetY;
+
+      // Fire at player
+      const currentTime = performance.now();
+      if (currentTime - this.lastFireTime >= this.fireRate) {
+        this.fire();
+        this.lastFireTime = currentTime;
+      }
+    } else {
+      this.destroy();
+    }
+  }
+
+  fire() {
+    if (!game.player || !game.player.active) return;
+
+    // Aim at player
+    const dx = game.player.x - this.x;
+    const dy = game.player.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > 0) {
+      const vx = (dx / dist) * 350;
+      const vy = (dy / dist) * 350;
+
+      game.projectiles.push(new Projectile(this.x, this.y, {
+        vx,
+        vy,
+        char: '¦',
+        color: '#ff0000',
+        damage: 15,
+        hitboxRadius: 4,
+        owner: 'enemy'
+      }));
+    }
+  }
+
+  takeDamage(amount) {
+    this.health -= amount;
+    if (this.health <= 0) {
+      this.health = 0;
+      this.onDeath();
+      this.destroy();
+    }
+  }
+
+  onDeath() {
+    game.effects.push(createSmallExplosion(this.x, this.y));
+    game.score += 500;
+    const scoreEl = document.querySelector('#score span');
+    if (scoreEl) scoreEl.textContent = game.score;
+  }
+
+  render(renderer) {
+    if (this.health > 0) {
+      renderer.drawTextCentered(this.art, this.x, this.y, this.color);
+    }
+  }
+}
+
+// ============================================================================
+// LEVEL 1 BOSS - CRIMSON DREADNOUGHT
+// ============================================================================
+
+class CrimsonDreadnought extends Enemy {
+  constructor() {
+    super(CONFIG.canvas.width / 2, -200, {
+      art: [], // Will be built in constructor
+      color: '#cc0000',
+      health: 500,
+      speed: 40,
+      scoreValue: 10000
+    });
+
+    this.type = 'boss';
+    this.maxHealth = 500;
+    this.phase = 1;
+    this.entranceComplete = false;
+    this.targetY = 120;
+    this.hitboxRadius = 50;
+
+    // Boss art
+    this.art = [
+      '    ╔═══════════════════╗    ',
+      '    ║  DREADNOUGHT-01  ║    ',
+      '    ╚═══════════════════╝    ',
+      '  ╔═══╗═══════════════╔═══╗  ',
+      '  ║[O]║███████████████║[O]║  ',
+      '  ╚═══╝═══════════════╚═══╝  ',
+      '═══════════════════════════════',
+      '█████████████████████████████',
+      '═══════════════════════════════',
+      '      ║║║║║║║║║║║║║║║      '
+    ];
+
+    // Create turrets
+    this.turrets = [
+      this.createTurret(-80, 20),  // Left turret
+      this.createTurret(80, 20),   // Right turret
+      this.createTurret(0, 60)     // Bottom turret
+    ];
+
+    // Attack patterns
+    this.attackTimer = 0;
+    this.attackInterval = 3000;
+    this.spreadFireTimer = 0;
+    this.spreadFireInterval = 500;
+
+    // Show boss health bar
+    this.showHealthBar();
+  }
+
+  createTurret(offsetX, offsetY) {
+    const turret = new BossTurret(this.x + offsetX, this.y + offsetY, this);
+    turret.offsetX = offsetX;
+    turret.offsetY = offsetY;
+    game.enemies.push(turret);
+    return turret;
+  }
+
+  showHealthBar() {
+    const container = document.getElementById('boss-health-container');
+    if (container) {
+      container.style.display = 'block';
+    }
+    this.updateHealthBar();
+  }
+
+  hideHealthBar() {
+    const container = document.getElementById('boss-health-container');
+    if (container) {
+      container.style.display = 'none';
+    }
+  }
+
+  updateHealthBar() {
+    const fill = document.getElementById('boss-health-fill');
+    if (fill) {
+      const healthPercent = (this.health / this.maxHealth) * 100;
+      fill.style.width = healthPercent + '%';
+
+      // Color changes based on health
+      if (healthPercent > 66) {
+        fill.style.background = 'linear-gradient(90deg, #ff0000 0%, #ff6600 50%, #ff0000 100%)';
+      } else if (healthPercent > 33) {
+        fill.style.background = 'linear-gradient(90deg, #ff6600 0%, #ffaa00 50%, #ff6600 100%)';
+      } else {
+        fill.style.background = 'linear-gradient(90deg, #ffaa00 0%, #ffff00 50%, #ffaa00 100%)';
+      }
+    }
+  }
+
+  update(deltaTime) {
+    const currentTime = performance.now();
+
+    // Entrance sequence
+    if (!this.entranceComplete) {
+      this.y += this.speed * deltaTime;
+      if (this.y >= this.targetY) {
+        this.y = this.targetY;
+        this.entranceComplete = true;
+        console.log('Boss entrance complete!');
+      }
+      return;
+    }
+
+    // Update phase based on health
+    const healthPercent = (this.health / this.maxHealth) * 100;
+    if (healthPercent <= 33 && this.phase !== 3) {
+      this.phase = 3;
+      this.attackInterval = 1500; // Faster attacks
+      console.log('Boss Phase 3: CRITICAL');
+    } else if (healthPercent <= 66 && this.phase !== 2) {
+      this.phase = 2;
+      this.attackInterval = 2000;
+      console.log('Boss Phase 2: DAMAGED');
+    }
+
+    // Horizontal movement
+    const amplitude = 60;
+    const frequency = 0.5;
+    this.x = CONFIG.canvas.width / 2 + Math.sin(currentTime * 0.001 * frequency) * amplitude;
+
+    // Phase 1 & 2: Spread shot attacks
+    if (this.phase <= 2) {
+      this.spreadFireTimer += deltaTime * 1000;
+      if (this.spreadFireTimer >= this.spreadFireInterval) {
+        this.fireSpreadShot();
+        this.spreadFireTimer = 0;
+      }
+    }
+
+    // Phase 2 & 3: Aimed barrage
+    if (this.phase >= 2) {
+      this.attackTimer += deltaTime * 1000;
+      if (this.attackTimer >= this.attackInterval) {
+        this.fireBarrage();
+        this.attackTimer = 0;
+      }
+    }
+
+    // Phase 3: Spiral attack
+    if (this.phase === 3) {
+      if (Math.random() < 0.02) {
+        this.fireSpiralPattern();
+      }
+    }
+  }
+
+  fireSpreadShot() {
+    const spreadCount = 5;
+    const spreadAngle = Math.PI / 4; // 45 degrees
+    const speed = 300;
+
+    for (let i = 0; i < spreadCount; i++) {
+      const angle = Math.PI / 2 + (i - Math.floor(spreadCount / 2)) * (spreadAngle / spreadCount);
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+
+      game.projectiles.push(new Projectile(this.x, this.y + 80, {
+        vx,
+        vy,
+        char: '•',
+        color: '#ff0000',
+        damage: 12,
+        hitboxRadius: 3,
+        owner: 'enemy'
+      }));
+    }
+  }
+
+  fireBarrage() {
+    if (!game.player || !game.player.active) return;
+
+    for (let i = 0; i < 3; i++) {
+      setTimeout(() => {
+        const dx = game.player.x - this.x;
+        const dy = game.player.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 0) {
+          const vx = (dx / dist) * 400;
+          const vy = (dy / dist) * 400;
+
+          game.projectiles.push(new Projectile(this.x, this.y + 80, {
+            vx,
+            vy,
+            char: '◆',
+            color: '#ff6600',
+            damage: 20,
+            hitboxRadius: 4,
+            owner: 'enemy'
+          }));
+        }
+      }, i * 200);
+    }
+  }
+
+  fireSpiralPattern() {
+    const projectileCount = 8;
+    const speed = 250;
+    const offset = performance.now() * 0.001;
+
+    for (let i = 0; i < projectileCount; i++) {
+      const angle = (Math.PI * 2 * i / projectileCount) + offset;
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+
+      game.projectiles.push(new Projectile(this.x, this.y + 80, {
+        vx,
+        vy,
+        char: '*',
+        color: '#ffff00',
+        damage: 10,
+        hitboxRadius: 3,
+        owner: 'enemy'
+      }));
+    }
+  }
+
+  takeDamage(amount) {
+    this.health -= amount;
+    if (this.health <= 0) {
+      this.health = 0;
+      this.onDeath();
+    }
+    this.updateHealthBar();
+  }
+
+  onDeath() {
+    // Destroy all turrets
+    this.turrets.forEach(turret => {
+      if (turret && turret.active) {
+        turret.destroy();
+      }
+    });
+
+    // Hide health bar
+    this.hideHealthBar();
+
+    // Massive explosion sequence
+    for (let i = 0; i < 10; i++) {
+      setTimeout(() => {
+        const offsetX = (Math.random() - 0.5) * 100;
+        const offsetY = (Math.random() - 0.5) * 80;
+        game.effects.push(createLargeExplosion(this.x + offsetX, this.y + offsetY));
+      }, i * 200);
+    }
+
+    // Add score
+    game.score += this.scoreValue;
+    const scoreEl = document.querySelector('#score span');
+    if (scoreEl) scoreEl.textContent = game.score;
+
+    // Victory!
+    setTimeout(() => {
+      game.victory = true;
+      console.log('VICTORY! Boss defeated!');
+    }, 2000);
+
+    this.destroy();
+  }
+
+  render(renderer) {
+    // Flash when taking damage
+    const flashInterval = 100;
+    const shouldShow = Math.floor(performance.now() / flashInterval) % 2 === 0 ||
+                       this.health > this.maxHealth * 0.25;
+
+    if (shouldShow) {
+      renderer.drawMultiLine(this.art, this.x, this.y, this.color);
+    }
+  }
+}
+
+// ============================================================================
 // INPUT MANAGER
 // ============================================================================
 
@@ -2392,8 +2753,14 @@ class WaveManager {
 
   triggerBoss() {
     console.log('All waves complete! Boss incoming...');
-    // Boss spawn will be implemented next
     game.bossTriggered = true;
+
+    // Spawn boss after a brief delay
+    setTimeout(() => {
+      game.boss = new CrimsonDreadnought();
+      game.enemies.push(game.boss);
+      console.log('BOSS FIGHT: Crimson Dreadnought has arrived!');
+    }, 2000);
   }
 }
 
