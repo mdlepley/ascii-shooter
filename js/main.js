@@ -9,8 +9,10 @@
 
 const CONFIG = {
   canvas: {
-    width: 800,
-    height: 600,
+    minWidth: 800,
+    minHeight: 600,
+    width: 800,  // Will be updated dynamically
+    height: 600, // Will be updated dynamically
     backgroundColor: '#000000'
   },
   targetFPS: 60,
@@ -22,6 +24,7 @@ const CONFIG = {
   player: {
     speed: 250, // pixels per second
     bounds: {
+      // These will be calculated dynamically based on canvas size
       top: 50,
       bottom: 550,
       left: 20,
@@ -244,6 +247,38 @@ class InputManager {
 }
 
 // ============================================================================
+// CANVAS RESIZE HANDLING
+// ============================================================================
+
+function updateCanvasSize() {
+  const canvas = game.canvas;
+
+  // Get the window dimensions
+  const width = Math.max(CONFIG.canvas.minWidth, window.innerWidth);
+  const height = Math.max(CONFIG.canvas.minHeight, window.innerHeight);
+
+  // Update canvas dimensions
+  canvas.width = width;
+  canvas.height = height;
+
+  // Update CONFIG
+  CONFIG.canvas.width = width;
+  CONFIG.canvas.height = height;
+
+  // Update player bounds to maintain playable area margins
+  CONFIG.player.bounds.top = 50;
+  CONFIG.player.bounds.bottom = height - 50;
+  CONFIG.player.bounds.left = 20;
+  CONFIG.player.bounds.right = width - 20;
+
+  // If player exists, ensure it stays within new bounds
+  if (game.player) {
+    game.player.x = Math.max(CONFIG.player.bounds.left, Math.min(CONFIG.player.bounds.right, game.player.x));
+    game.player.y = Math.max(CONFIG.player.bounds.top, Math.min(CONFIG.player.bounds.bottom, game.player.y));
+  }
+}
+
+// ============================================================================
 // GAME INITIALIZATION
 // ============================================================================
 
@@ -257,6 +292,9 @@ function init() {
     return;
   }
 
+  // Set initial canvas size
+  updateCanvasSize();
+
   // Create renderer
   game.renderer = new ASCIIRenderer(game.ctx);
 
@@ -266,6 +304,11 @@ function init() {
   // Create player
   game.player = new Player(CONFIG.canvas.width / 2, CONFIG.canvas.height - 100);
   game.entities.push(game.player);
+
+  // Handle window resize
+  window.addEventListener('resize', () => {
+    updateCanvasSize();
+  });
 
   // Start game loop
   game.running = true;

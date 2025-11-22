@@ -37,6 +37,12 @@ body {
   background-color: #000;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+  min-width: 800px;
+  min-height: 600px;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
 }
 
 /* HUD Overlay */
