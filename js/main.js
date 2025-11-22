@@ -1,194 +1,356 @@
-import { Enemy } from './enemies.js';
+/**
+ * ASCII Shmup Revival - Main Game Loop
+ * Canvas-based implementation
+ */
 
-const playerWeapons = {
-  sniper: {
-    speed: 100
+// ============================================================================
+// GAME CONFIGURATION (from Game Development Bible)
+// ============================================================================
+
+const CONFIG = {
+  canvas: {
+    width: 800,
+    height: 600,
+    backgroundColor: '#000000'
   },
-  vulcan: {
-    speed: 400
+  targetFPS: 60,
+  font: {
+    family: 'Courier New, monospace',
+    size: 16,
+    weight: 'bold'
   },
-  rocket: {
-    speed: 700,
-    maxAmmo: 50,
-    currentAmmo: 10,
-    use() {
-      this.currentAmmo--;
-      updateUI({ weapon: "rocket" });
+  player: {
+    speed: 250, // pixels per second
+    bounds: {
+      top: 50,
+      bottom: 550,
+      left: 20,
+      right: 780
     }
-  },
-  grenade: {
-    speed: 1000
-  },
-  laser: {
-    speed: 10
   }
 };
 
-const player = {
-  ship: null,
-  _x: 0,
-  _y: 0,
-  updateCoords(x, y) {
-    this._x = x;
-    this._y = y;
-  },
-  shoot(options) {
-    console.log("Shot fired!");
-    this.shotsFired++;
+// ============================================================================
+// GAME STATE
+// ============================================================================
 
-    const shot = options.shot.cloneNode(true);
-    shot.classList.add("shot-fired");
-    document.body.appendChild(shot);
+const game = {
+  canvas: null,
+  ctx: null,
+  running: false,
+  lastTime: 0,
+  deltaTime: 0,
+  entities: [],
+  player: null
+};
 
-    const fx = document.getElementById("shot-fx1").cloneNode(true);
-    document.body.appendChild(fx);
+// ============================================================================
+// ASCII RENDERING UTILITY
+// ============================================================================
 
-    fx.style.left = `${options.x - 17}px`;
-    fx.style.top = `${options.y - 10}px`;
-    fx.style.display = 'block';
+class ASCIIRenderer {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.setFont();
+  }
 
-    shot.style.left = `${options.x + 11}px`;
-    shot.style.top = `${options.y - 3}px`;
+  setFont(size = CONFIG.font.size, family = CONFIG.font.family, weight = CONFIG.font.weight) {
+    this.ctx.font = `${weight} ${size}px ${family}`;
+    this.ctx.textBaseline = 'top';
+  }
 
-    // Animate shot to top using Web Animations API
-    shot.animate(
-      [
-        { top: `${options.y - 3}px` },
-        { top: '0px' }
-      ],
-      {
-        duration: 300,
-        easing: 'linear'
+  /**
+   * Render ASCII text at a specific position
+   * @param {string} text - The text to render
+   * @param {number} x - X position
+   * @param {number} y - Y position
+   * @param {string} color - Fill color
+   */
+  drawText(text, x, y, color = '#ffffff') {
+    this.ctx.fillStyle = color;
+    this.ctx.fillText(text, x, y);
+  }
+
+  /**
+   * Render multi-line ASCII art
+   * @param {string[]} lines - Array of text lines
+   * @param {number} x - X position (center)
+   * @param {number} y - Y position (top)
+   * @param {string} color - Fill color
+   */
+  drawMultiLine(lines, x, y, color = '#ffffff') {
+    const lineHeight = CONFIG.font.size;
+    lines.forEach((line, index) => {
+      // Center each line
+      const metrics = this.ctx.measureText(line);
+      const lineX = x - (metrics.width / 2);
+      const lineY = y + (index * lineHeight);
+      this.drawText(line, lineX, lineY, color);
+    });
+  }
+
+  /**
+   * Measure text width
+   * @param {string} text
+   * @returns {number}
+   */
+  measureWidth(text) {
+    return this.ctx.measureText(text).width;
+  }
+}
+
+// ============================================================================
+// BASE ENTITY CLASS
+// ============================================================================
+
+class Entity {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.active = true;
+    this.type = 'entity';
+  }
+
+  update(deltaTime) {
+    // Override in subclasses
+  }
+
+  render(renderer) {
+    // Override in subclasses
+  }
+
+  destroy() {
+    this.active = false;
+  }
+}
+
+// ============================================================================
+// PLAYER SHIP
+// ============================================================================
+
+class Player extends Entity {
+  constructor(x, y) {
+    super(x, y);
+    this.type = 'player';
+
+    // Visual
+    this.art = [
+      '  ^  ',
+      ' <o> ',
+      ' ||| '
+    ];
+    this.color = '#00ffff'; // Cyan from GDB
+
+    // Physics
+    this.speed = CONFIG.player.speed;
+    this.vx = 0;
+    this.vy = 0;
+
+    // Combat
+    this.health = 100;
+    this.maxHealth = 100;
+
+    // Animation
+    this.thrustFrame = 0;
+    this.thrustTimer = 0;
+    this.thrustInterval = 100; // ms
+  }
+
+  update(deltaTime) {
+    // Update position based on velocity
+    this.x += this.vx * deltaTime;
+    this.y += this.vy * deltaTime;
+
+    // Clamp to bounds
+    this.x = Math.max(CONFIG.player.bounds.left, Math.min(CONFIG.player.bounds.right, this.x));
+    this.y = Math.max(CONFIG.player.bounds.top, Math.min(CONFIG.player.bounds.bottom, this.y));
+
+    // Update thrust animation
+    this.thrustTimer += deltaTime * 1000;
+    if (this.thrustTimer >= this.thrustInterval) {
+      this.thrustFrame = (this.thrustFrame + 1) % 2;
+      this.thrustTimer = 0;
+    }
+
+    // Decay velocity (for smooth stopping)
+    this.vx *= 0.85;
+    this.vy *= 0.85;
+  }
+
+  render(renderer) {
+    // Render ship
+    renderer.drawMultiLine(this.art, this.x, this.y, this.color);
+
+    // Render thrust
+    const thrustChar = this.thrustFrame === 0 ? '*' : '^';
+    const thrustY = this.y + (CONFIG.font.size * 3);
+    renderer.drawText(thrustChar, this.x - 5, thrustY, '#ff6600');
+  }
+
+  move(dx, dy) {
+    // Acceleration-based movement
+    this.vx = dx * this.speed;
+    this.vy = dy * this.speed;
+  }
+}
+
+// ============================================================================
+// INPUT MANAGER
+// ============================================================================
+
+class InputManager {
+  constructor() {
+    this.keys = {};
+    this.setupEventListeners();
+  }
+
+  setupEventListeners() {
+    window.addEventListener('keydown', (e) => {
+      this.keys[e.code] = true;
+
+      // Prevent default for game controls
+      if (['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyR'].includes(e.code)) {
+        e.preventDefault();
       }
-    ).onfinish = () => {
-      shot.remove();
-      fx.remove();
-    };
-  },
-  weapons: null,
-  getCurrentWeapon() {
-    return this.currentWeapon;
-  },
-  setCurrentWeapon() {
-    this.currentWeapon = document.querySelector("#player-ship .current-weapon");
-  },
-  switchWeapons() {
-    console.log("Switched weapons");
+    });
 
-    const uiOldWeapon = document.querySelector(".ui-current-weapon");
-    const uiNewWeapon = uiOldWeapon.nextElementSibling?.classList.contains("weapon")
-      ? uiOldWeapon.nextElementSibling
-      : null;
-    const oldWeapon = document.querySelector("#player-ship .current-weapon");
-    const newWeapon = oldWeapon.nextElementSibling?.classList.contains("weapon")
-      ? oldWeapon.nextElementSibling
-      : null;
+    window.addEventListener('keyup', (e) => {
+      this.keys[e.code] = false;
+    });
+  }
 
-    // Update UI
-    uiOldWeapon.classList.remove("ui-current-weapon");
-    if (uiNewWeapon) {
-      uiNewWeapon.classList.add("ui-current-weapon");
-    } else {
-      player.uiWeapons[0].classList.add("ui-current-weapon");
+  isKeyDown(code) {
+    return this.keys[code] === true;
+  }
+
+  getMovementVector() {
+    let dx = 0;
+    let dy = 0;
+
+    if (this.isKeyDown('KeyW')) dy -= 1;
+    if (this.isKeyDown('KeyS')) dy += 1;
+    if (this.isKeyDown('KeyA')) dx -= 1;
+    if (this.isKeyDown('KeyD')) dx += 1;
+
+    // Normalize diagonal movement
+    if (dx !== 0 && dy !== 0) {
+      const magnitude = Math.sqrt(dx * dx + dy * dy);
+      dx /= magnitude;
+      dy /= magnitude;
     }
 
-    // Update player ship
-    logplayer();
-    console.log(player.getCurrentWeapon());
-    oldWeapon.classList.remove("current-weapon");
-    if (newWeapon) {
-      newWeapon.classList.add("current-weapon");
-    } else {
-      player.weapons[0].classList.add("current-weapon");
-    }
-    this.setCurrentWeapon();
-  },
-  shotsFired: 0
-};
-
-function updateUI(options) {
-  switch (options.weapon) {
-    case "rocket":
-      document.querySelector("#ui-rocket-weapon .ammo").textContent = playerWeapons.rocket.currentAmmo;
-      break;
+    return { dx, dy };
   }
 }
 
-function logplayer() {
-  console.log(player);
+// ============================================================================
+// GAME INITIALIZATION
+// ============================================================================
+
+function init() {
+  // Get canvas and context
+  game.canvas = document.getElementById('game-canvas');
+  game.ctx = game.canvas.getContext('2d');
+
+  if (!game.ctx) {
+    console.error('Failed to get 2D context');
+    return;
+  }
+
+  // Create renderer
+  game.renderer = new ASCIIRenderer(game.ctx);
+
+  // Create input manager
+  game.input = new InputManager();
+
+  // Create player
+  game.player = new Player(CONFIG.canvas.width / 2, CONFIG.canvas.height - 100);
+  game.entities.push(game.player);
+
+  // Start game loop
+  game.running = true;
+  game.lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+
+  console.log('Game initialized - Canvas mode');
 }
 
-// Document ready
-document.addEventListener('DOMContentLoaded', () => {
-  // Initialize more player settings
-  player.ship = document.getElementById("player-ship");
-  const rect = player.ship.getBoundingClientRect();
-  player.updateCoords(rect.left, rect.top);
+// ============================================================================
+// GAME LOOP
+// ============================================================================
 
-  // Add weapons
-  player.weapons = Array.from(document.querySelectorAll("#player-ship .weapon"));
-  player.setCurrentWeapon();
-  player.uiWeapons = Array.from(document.querySelector("#hud #weapons").children);
-  player.uiCurrentWeapon = document.querySelector("#hud .ui-current-weapon");
+function gameLoop(currentTime) {
+  if (!game.running) return;
 
-  // Add player for debug
-  logplayer();
+  // Calculate delta time in seconds
+  game.deltaTime = (currentTime - game.lastTime) / 1000;
+  game.lastTime = currentTime;
 
-  // Player ship controls
-  document.addEventListener('keydown', (e) => {
-    const shipStyle = player.ship.style;
-    const currentBottom = parseInt(getComputedStyle(player.ship).bottom) || 10;
-    const currentLeft = parseInt(getComputedStyle(player.ship).left) || 0;
+  // Cap delta time to prevent large jumps
+  game.deltaTime = Math.min(game.deltaTime, 0.1);
 
-    switch (e.which || e.keyCode) {
-      case 87: // W
-        shipStyle.bottom = `${currentBottom + 10}px`;
-        const rectW = player.ship.getBoundingClientRect();
-        player.updateCoords(rectW.left, rectW.top);
-        break;
-      case 65: // A
-        shipStyle.left = `${currentLeft - 10}px`;
-        const rectA = player.ship.getBoundingClientRect();
-        player.updateCoords(rectA.left, rectA.top);
-        break;
-      case 83: // S
-        shipStyle.bottom = `${currentBottom - 10}px`;
-        const rectS = player.ship.getBoundingClientRect();
-        player.updateCoords(rectS.left, rectS.top);
-        break;
-      case 68: // D
-        shipStyle.left = `${currentLeft + 10}px`;
-        const rectD = player.ship.getBoundingClientRect();
-        player.updateCoords(rectD.left, rectD.top);
-        break;
-      case 32: // space
-        e.preventDefault(); // Prevent page scroll
-        player.shoot({
-          x: player._x,
-          y: player._y,
-          shot: player.currentWeapon
-        });
-        break;
-      case 69: // E
-        player.switchWeapons();
-        break;
-      case 82: // R
-        if (playerWeapons.rocket.currentAmmo > 0) {
-          player.shoot({
-            x: player._x,
-            y: player._y,
-            shot: document.getElementById("rocket")
-          });
-          playerWeapons.rocket.use();
-        }
-        break;
+  // Update
+  update(game.deltaTime);
+
+  // Render
+  render();
+
+  // Next frame
+  requestAnimationFrame(gameLoop);
+}
+
+// ============================================================================
+// UPDATE
+// ============================================================================
+
+function update(deltaTime) {
+  // Handle input
+  const movement = game.input.getMovementVector();
+  game.player.move(movement.dx, movement.dy);
+
+  // Update all entities
+  game.entities.forEach(entity => {
+    if (entity.active) {
+      entity.update(deltaTime);
     }
   });
 
-  const firstEnemy = new Enemy();
-});
+  // Remove inactive entities
+  game.entities = game.entities.filter(entity => entity.active);
+}
 
-// TODO:
-// - collision detection
-// - weapon fire speeds
-// - enemy movement
+// ============================================================================
+// RENDER
+// ============================================================================
+
+function render() {
+  // Clear canvas
+  game.ctx.fillStyle = CONFIG.canvas.backgroundColor;
+  game.ctx.fillRect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+
+  // Render all entities
+  game.entities.forEach(entity => {
+    if (entity.active) {
+      entity.render(game.renderer);
+    }
+  });
+
+  // Debug info (optional)
+  if (false) { // Set to true for debugging
+    game.ctx.fillStyle = '#00ff00';
+    game.ctx.font = '12px monospace';
+    game.ctx.fillText(`FPS: ${Math.round(1 / game.deltaTime)}`, 10, 10);
+    game.ctx.fillText(`Entities: ${game.entities.length}`, 10, 25);
+  }
+}
+
+// ============================================================================
+// START GAME
+// ============================================================================
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
