@@ -631,7 +631,7 @@ class Player extends Entity {
     // Combat
     this.health = 100;
     this.maxHealth = 100;
-    this.hitboxRadius = 8; // from GDB
+    this.hitboxRadius = this.calculateHitboxRadius();
 
     // Weapons
     this.weapons = [
@@ -738,6 +738,23 @@ class Player extends Entity {
     this.vx = dx * this.speed;
     this.vy = dy * this.speed;
   }
+
+  calculateHitboxRadius() {
+    // Player ship is multi-line, calculate based on dimensions
+    if (!game.renderer) {
+      return 16; // Default fallback
+    }
+
+    let maxWidth = 0;
+    this.art.forEach(line => {
+      const width = game.renderer.measureWidth(line);
+      maxWidth = Math.max(maxWidth, width);
+    });
+    const height = this.art.length * CONFIG.font.size;
+
+    // Use half-diagonal for circular hitbox to cover rectangle
+    return Math.sqrt((maxWidth/2) ** 2 + (height/2) ** 2);
+  }
 }
 
 // ============================================================================
@@ -752,9 +769,40 @@ class Enemy extends Entity {
     this.color = config.color || '#ff0000';
     this.health = config.health || 10;
     this.maxHealth = this.health;
-    this.hitboxRadius = config.hitboxRadius || 8;
     this.scoreValue = config.scoreValue || 100;
     this.speed = config.speed || 100;
+
+    // Calculate hitbox radius based on art if not provided
+    if (config.hitboxRadius !== undefined) {
+      this.hitboxRadius = config.hitboxRadius;
+    } else {
+      this.hitboxRadius = this.calculateHitboxRadius();
+    }
+  }
+
+  calculateHitboxRadius() {
+    // Create a temporary canvas context to measure text
+    if (!game.renderer) {
+      return 16; // Default fallback
+    }
+
+    if (Array.isArray(this.art)) {
+      // Multi-line art - find the widest line
+      let maxWidth = 0;
+      this.art.forEach(line => {
+        const width = game.renderer.measureWidth(line);
+        maxWidth = Math.max(maxWidth, width);
+      });
+      const height = this.art.length * CONFIG.font.size;
+
+      // Use half-diagonal for circular hitbox to cover rectangle
+      return Math.sqrt((maxWidth/2) ** 2 + (height/2) ** 2);
+    } else {
+      // Single-line art
+      const width = game.renderer.measureWidth(this.art);
+      // Use half-width as radius (covers the full width)
+      return width / 2;
+    }
   }
 
   takeDamage(amount) {
@@ -799,7 +847,7 @@ class Scout extends Enemy {
       art: '{[::]}',
       color: '#ff3300',
       health: 10,
-      hitboxRadius: 8,
+      // hitboxRadius auto-calculated from art
       speed: 120,
       scoreValue: 100
     });
