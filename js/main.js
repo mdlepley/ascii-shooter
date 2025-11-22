@@ -360,8 +360,10 @@ const game = {
   effects: [],
   particles: [],
   clouds: [],
+  powerups: [],
   background: null,
   score: 0,
+  gameOver: false,
   enemySpawnTimer: 0,
   enemySpawnInterval: 2000, // milliseconds between enemy spawns
   cloudSpawnTimer: 0,
@@ -861,6 +863,88 @@ class Effect extends Entity {
 }
 
 // ============================================================================
+// POWER-UP SYSTEM
+// ============================================================================
+
+class PowerUp extends Entity {
+  constructor(x, y, type) {
+    super(x, y);
+    this.type = type;
+    this.vy = 80; // Slow downward movement
+    this.hitboxRadius = 10;
+    this.pulseTimer = 0;
+
+    // Configure based on type
+    switch (type) {
+      case 'health':
+        this.char = '+';
+        this.color = '#ff0000'; // Red cross
+        this.healAmount = 25;
+        break;
+      case 'health_large':
+        this.char = '♥';
+        this.color = '#ff69b4'; // Pink heart
+        this.healAmount = 50;
+        break;
+      case 'rocket_ammo':
+        this.char = 'R';
+        this.color = '#ffaa00'; // Orange
+        this.ammoAmount = 5;
+        break;
+      default:
+        this.char = '?';
+        this.color = '#ffffff';
+    }
+  }
+
+  update(deltaTime) {
+    // Move downward
+    this.y += this.vy * deltaTime;
+
+    // Pulse animation
+    this.pulseTimer += deltaTime * 5;
+
+    // Destroy if off screen
+    if (this.y > CONFIG.canvas.height + 50) {
+      this.destroy();
+    }
+  }
+
+  render(renderer) {
+    // Pulsing effect
+    const scale = 1 + Math.sin(this.pulseTimer) * 0.3;
+    const alpha = Math.floor((0.7 + Math.sin(this.pulseTimer) * 0.3) * 255).toString(16).padStart(2, '0');
+    const color = this.color + alpha;
+
+    renderer.drawTextCentered(this.char, this.x, this.y, color);
+  }
+
+  collect(player) {
+    switch (this.type) {
+      case 'health':
+      case 'health_large':
+        player.health = Math.min(player.maxHealth, player.health + this.healAmount);
+        player.updateHealthUI();
+        break;
+      case 'rocket_ammo':
+        player.rocketLauncher.ammo = Math.min(
+          player.rocketLauncher.maxAmmo,
+          player.rocketLauncher.ammo + this.ammoAmount
+        );
+        player.updateWeaponUI();
+        break;
+    }
+
+    // Play collection sound (simple beep)
+    if (game.audioManager && game.audioManager.initialized) {
+      game.audioManager.playLaserSound(1200, 0.1);
+    }
+
+    this.destroy();
+  }
+}
+
+// ============================================================================
 // EFFECT FACTORIES
 // ============================================================================
 
@@ -1194,6 +1278,10 @@ class Player extends Entity {
     this.health = 100;
     this.maxHealth = 100;
     this.hitboxRadius = this.calculateHitboxRadius();
+    this.lives = 3; // Starting lives from GDB
+    this.invulnerable = false;
+    this.invulnerabilityTimer = 0;
+    this.invulnerabilityDuration = 3000; // 3 seconds from GDB
 
     // Weapons
     this.weapons = [
@@ -1252,14 +1340,55 @@ class Player extends Entity {
   }
 
   takeDamage(amount) {
+    // Don't take damage if invulnerable
+    if (this.invulnerable) return;
+
     this.health -= amount;
     if (this.health <= 0) {
       this.health = 0;
-      // Create large explosion on player death
-      game.effects.push(createLargeExplosion(this.x, this.y));
-      this.destroy();
+      this.die();
     }
     this.updateHealthUI();
+  }
+
+  die() {
+    // Create large explosion on player death
+    game.effects.push(createLargeExplosion(this.x, this.y));
+
+    this.lives--;
+    this.updateLivesUI();
+
+    if (this.lives > 0) {
+      // Respawn after a delay
+      setTimeout(() => {
+        this.respawn();
+      }, 1000); // 1 second delay
+    } else {
+      // Game over
+      this.destroy();
+      game.gameOver = true;
+    }
+  }
+
+  respawn() {
+    // Reset position to start
+    this.x = CONFIG.canvas.width / 2;
+    this.y = CONFIG.canvas.height - 100;
+
+    // Reset health
+    this.health = this.maxHealth;
+    this.updateHealthUI();
+
+    // Grant invulnerability
+    this.invulnerable = true;
+    this.invulnerabilityTimer = 0;
+
+    // Reset velocity
+    this.vx = 0;
+    this.vy = 0;
+
+    // Make sure player is active
+    this.active = true;
   }
 
   updateHealthUI() {
@@ -1269,7 +1398,23 @@ class Player extends Entity {
     }
   }
 
+  updateLivesUI() {
+    const livesEl = document.querySelector('#lives span');
+    if (livesEl) {
+      livesEl.textContent = this.lives;
+    }
+  }
+
   update(deltaTime) {
+    // Update invulnerability timer
+    if (this.invulnerable) {
+      this.invulnerabilityTimer += deltaTime * 1000;
+      if (this.invulnerabilityTimer >= this.invulnerabilityDuration) {
+        this.invulnerable = false;
+        this.invulnerabilityTimer = 0;
+      }
+    }
+
     // Update position based on velocity
     this.x += this.vx * deltaTime;
     this.y += this.vy * deltaTime;
@@ -1291,6 +1436,13 @@ class Player extends Entity {
   }
 
   render(renderer) {
+    // Flash during invulnerability
+    if (this.invulnerable) {
+      const flashInterval = 100; // Flash every 100ms
+      const shouldShow = Math.floor(this.invulnerabilityTimer / flashInterval) % 2 === 0;
+      if (!shouldShow) return; // Skip rendering to create flash effect
+    }
+
     // Render ship
     renderer.drawMultiLine(this.art, this.x, this.y, this.color);
 
@@ -1434,6 +1586,20 @@ class Enemy extends Entity {
 
     // Create explosion effect
     game.effects.push(createSmallExplosion(this.x, this.y));
+
+    // Drop power-up based on drop table
+    if (this.dropTable) {
+      const roll = Math.random();
+      let cumulative = 0;
+
+      for (const [dropType, chance] of Object.entries(this.dropTable)) {
+        cumulative += chance;
+        if (roll <= cumulative && dropType !== 'nothing') {
+          game.powerups.push(new PowerUp(this.x, this.y, dropType));
+          break;
+        }
+      }
+    }
   }
 
   updateScoreUI() {
@@ -1470,6 +1636,13 @@ class Scout extends Enemy {
         aimAtPlayer: false      // fires straight down
       }
     });
+
+    // Drop table from GDB
+    this.dropTable = {
+      'health': 0.3,        // 30% chance
+      'rocket_ammo': 0.1,   // 10% chance
+      'nothing': 0.6        // 60% nothing
+    };
 
     // Sine wave movement parameters
     this.amplitude = 50;
@@ -1525,6 +1698,13 @@ class Gunship extends Enemy {
         burstDelay: 150         // milliseconds between burst shots
       }
     });
+
+    // Drop table from GDB
+    this.dropTable = {
+      'health_large': 0.2,    // 20% chance
+      'rocket_ammo': 0.3,     // 30% chance
+      'nothing': 0.5          // 50% nothing
+    };
 
     // Movement parameters
     this.descendTo = 150;       // Y position to stop at
@@ -1609,6 +1789,11 @@ class Kamikaze extends Enemy {
       scoreValue: 150,
       weapon: null  // No weapon - explodes on contact
     });
+
+    // Drop table from GDB (Kamikazes don't drop anything - they explode)
+    this.dropTable = {
+      'nothing': 1.0            // 100% nothing
+    };
 
     // Chase behavior parameters
     this.acceleration = 150;     // pixels per second squared
@@ -1952,6 +2137,7 @@ async function init() {
 
   // Initialize UI
   game.player.updateHealthUI();
+  game.player.updateLivesUI();
   game.player.updateWeaponUI();
   const scoreEl = document.querySelector('#score span');
   if (scoreEl) {
@@ -2074,6 +2260,17 @@ function handleCollisions() {
       }
     });
   }
+
+  // Player vs PowerUps (collection)
+  if (game.player && game.player.active) {
+    game.powerups.forEach(powerup => {
+      if (!powerup.active) return;
+
+      if (game.player.collidesWith(powerup)) {
+        powerup.collect(game.player);
+      }
+    });
+  }
 }
 
 // ============================================================================
@@ -2151,6 +2348,13 @@ function update(deltaTime) {
     }
   });
 
+  // Update powerups
+  game.powerups.forEach(powerup => {
+    if (powerup.active) {
+      powerup.update(deltaTime);
+    }
+  });
+
   // Handle collisions
   handleCollisions();
 
@@ -2160,6 +2364,7 @@ function update(deltaTime) {
   game.effects = game.effects.filter(e => e.active);
   game.particles = game.particles.filter(p => p.active);
   game.clouds = game.clouds.filter(c => c.active);
+  game.powerups = game.powerups.filter(p => p.active);
 
   // Enemy spawning
   game.enemySpawnTimer += deltaTime * 1000;
@@ -2232,6 +2437,13 @@ function render() {
   game.projectiles.forEach(projectile => {
     if (projectile.active) {
       projectile.render(game.renderer);
+    }
+  });
+
+  // Render powerups
+  game.powerups.forEach(powerup => {
+    if (powerup.active) {
+      powerup.render(game.renderer);
     }
   });
 
