@@ -82,6 +82,19 @@ class ASCIIRenderer {
   }
 
   /**
+   * Render ASCII text centered at a specific position
+   * @param {string} text - The text to render
+   * @param {number} x - X position (center)
+   * @param {number} y - Y position (top)
+   * @param {string} color - Fill color
+   */
+  drawTextCentered(text, x, y, color = '#ffffff') {
+    const metrics = this.ctx.measureText(text);
+    const textX = x - (metrics.width / 2);
+    this.drawText(text, textX, y, color);
+  }
+
+  /**
    * Render multi-line ASCII art
    * @param {string[]} lines - Array of text lines
    * @param {number} x - X position (center)
@@ -172,7 +185,7 @@ class Projectile extends Entity {
   }
 
   render(renderer) {
-    renderer.drawText(this.char, this.x, this.y, this.color);
+    renderer.drawTextCentered(this.char, this.x, this.y, this.color);
   }
 }
 
@@ -380,9 +393,9 @@ class Rocket extends Projectile {
   }
 
   render(renderer) {
-    // Render rocket body
-    renderer.drawText('^', this.x - 2, this.y, this.color);
-    renderer.drawText('*', this.x - 2, this.y + CONFIG.font.size, '#ff6600');
+    // Render rocket body (centered)
+    renderer.drawTextCentered('^', this.x, this.y, this.color);
+    renderer.drawTextCentered('*', this.x, this.y + CONFIG.font.size, '#ff6600');
   }
 }
 
@@ -444,7 +457,7 @@ class Particle extends Entity {
   }
 
   render(renderer) {
-    renderer.drawText(this.char, this.x, this.y, this.color);
+    renderer.drawTextCentered(this.char, this.x, this.y, this.color);
   }
 }
 
@@ -517,7 +530,7 @@ class Effect extends Entity {
     if (this.currentFrame >= this.frames.length) return;
 
     const frame = this.frames[this.currentFrame];
-    renderer.drawText(frame.char, this.x, this.y, frame.color);
+    renderer.drawTextCentered(frame.char, this.x, this.y, frame.color);
   }
 }
 
@@ -714,10 +727,10 @@ class Player extends Entity {
     // Render ship
     renderer.drawMultiLine(this.art, this.x, this.y, this.color);
 
-    // Render thrust
+    // Render thrust (centered below ship)
     const thrustChar = this.thrustFrame === 0 ? '*' : '^';
     const thrustY = this.y + (CONFIG.font.size * 3);
-    renderer.drawText(thrustChar, this.x - 5, thrustY, '#ff6600');
+    renderer.drawTextCentered(thrustChar, this.x, thrustY, '#ff6600');
   }
 
   move(dx, dy) {
@@ -775,7 +788,7 @@ class Enemy extends Entity {
     if (Array.isArray(this.art)) {
       renderer.drawMultiLine(this.art, this.x, this.y, this.color);
     } else {
-      renderer.drawText(this.art, this.x, this.y, this.color);
+      renderer.drawTextCentered(this.art, this.x, this.y, this.color);
     }
   }
 }
