@@ -1382,7 +1382,9 @@ class Enemy extends Entity {
         projectiles.push(new Projectile(this.x, this.y + 10, config));
       }
     } else {
-      // Fire straight down
+      // Fire straight down (positive Y is downward)
+      config.vx = 0;
+      config.vy = this.weapon.projectileSpeed;
       projectiles.push(new Projectile(this.x, this.y + 10, config));
     }
 
