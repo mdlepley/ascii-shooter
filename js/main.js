@@ -47,6 +47,8 @@ const game = {
   player: null,
   projectiles: [],
   enemies: [],
+  effects: [],
+  particles: [],
   score: 0,
   enemySpawnTimer: 0,
   enemySpawnInterval: 2000 // milliseconds between enemy spawns
@@ -218,6 +220,9 @@ class SniperLaser extends Weapon {
   }
 
   createProjectiles(x, y) {
+    // Add muzzle flash
+    game.effects.push(createMuzzleFlash(x, y, this.config.projectileColor));
+
     return [new Projectile(x, y - 10, {
       speed: this.config.projectileSpeed,
       char: this.config.projectileChar,
@@ -245,6 +250,9 @@ class VulcanCannon extends Weapon {
   }
 
   createProjectiles(x, y) {
+    // Add muzzle flash
+    game.effects.push(createMuzzleFlash(x, y, this.config.projectileColor));
+
     // Random horizontal spread
     const spreadOffset = (Math.random() - 0.5) * this.config.spread * 2;
     return [new Projectile(x + spreadOffset, y - 10, {
@@ -285,6 +293,9 @@ class RocketLauncher extends Weapon {
   }
 
   createProjectiles(x, y) {
+    // Add rocket launch flash
+    game.effects.push(createMuzzleFlash(x, y, '#ff6600'));
+
     return [new Rocket(x, y - 10, {
       speed: this.config.projectileSpeed,
       damage: this.config.damage,
@@ -376,6 +387,213 @@ class Rocket extends Projectile {
 }
 
 // ============================================================================
+// PARTICLE SYSTEM
+// ============================================================================
+
+class Particle extends Entity {
+  constructor(x, y, config) {
+    super(x, y);
+    this.type = 'particle';
+    this.vx = config.vx || 0;
+    this.vy = config.vy || 0;
+    this.char = config.char || '·';
+    this.color = config.color || '#ffffff';
+    this.lifetime = config.lifetime || 400; // milliseconds
+    this.age = 0;
+    this.fadeToColor = config.fadeToColor || null;
+    this.initialColor = this.color;
+  }
+
+  update(deltaTime) {
+    this.age += deltaTime * 1000;
+
+    // Update position
+    this.x += this.vx * deltaTime;
+    this.y += this.vy * deltaTime;
+
+    // Fade color if specified
+    if (this.fadeToColor) {
+      const progress = Math.min(this.age / this.lifetime, 1);
+      this.color = this.interpolateColor(this.initialColor, this.fadeToColor, progress);
+    }
+
+    // Destroy when lifetime expires
+    if (this.age >= this.lifetime) {
+      this.destroy();
+    }
+  }
+
+  interpolateColor(color1, color2, progress) {
+    // Simple hex color interpolation
+    const c1 = parseInt(color1.slice(1), 16);
+    const c2 = parseInt(color2.slice(1), 16);
+
+    const r1 = (c1 >> 16) & 0xff;
+    const g1 = (c1 >> 8) & 0xff;
+    const b1 = c1 & 0xff;
+
+    const r2 = (c2 >> 16) & 0xff;
+    const g2 = (c2 >> 8) & 0xff;
+    const b2 = c2 & 0xff;
+
+    const r = Math.round(r1 + (r2 - r1) * progress);
+    const g = Math.round(g1 + (g2 - g1) * progress);
+    const b = Math.round(b1 + (b2 - b1) * progress);
+
+    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+  }
+
+  render(renderer) {
+    renderer.drawText(this.char, this.x, this.y, this.color);
+  }
+}
+
+// ============================================================================
+// VISUAL EFFECTS
+// ============================================================================
+
+class Effect extends Entity {
+  constructor(x, y, config) {
+    super(x, y);
+    this.type = 'effect';
+    this.frames = config.frames || [];
+    this.currentFrame = 0;
+    this.frameTimer = 0;
+    this.particles = [];
+    this.particleConfig = config.particles || null;
+    this.particlesSpawned = false;
+  }
+
+  update(deltaTime) {
+    if (this.currentFrame >= this.frames.length) {
+      this.destroy();
+      return;
+    }
+
+    this.frameTimer += deltaTime * 1000;
+
+    const frame = this.frames[this.currentFrame];
+    if (this.frameTimer >= frame.duration) {
+      this.currentFrame++;
+      this.frameTimer = 0;
+
+      // Spawn particles on first frame
+      if (this.currentFrame === 1 && !this.particlesSpawned && this.particleConfig) {
+        this.spawnParticles();
+        this.particlesSpawned = true;
+      }
+    }
+  }
+
+  spawnParticles() {
+    if (!this.particleConfig) return;
+
+    const count = this.particleConfig.count || 8;
+    const speed = this.particleConfig.speed || 100;
+    const char = this.particleConfig.char || '·';
+    const initialColor = this.particleConfig.initialColor || '#ffffff';
+    const fadeToColor = this.particleConfig.fadeToColor || null;
+    const lifetime = this.particleConfig.lifetime || 400;
+
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+
+      const particle = new Particle(this.x, this.y, {
+        vx,
+        vy,
+        char,
+        color: initialColor,
+        fadeToColor,
+        lifetime
+      });
+
+      game.particles.push(particle);
+    }
+  }
+
+  render(renderer) {
+    if (this.currentFrame >= this.frames.length) return;
+
+    const frame = this.frames[this.currentFrame];
+    renderer.drawText(frame.char, this.x, this.y, frame.color);
+  }
+}
+
+// ============================================================================
+// EFFECT FACTORIES
+// ============================================================================
+
+function createSmallExplosion(x, y) {
+  return new Effect(x, y, {
+    frames: [
+      { char: '*', color: '#ffffff', duration: 50 },
+      { char: '@', color: '#ffff00', duration: 50 },
+      { char: '#', color: '#ff6600', duration: 60 },
+      { char: '%', color: '#ff3300', duration: 60 },
+      { char: '+', color: '#ff0000', duration: 70 },
+      { char: '·', color: '#660000', duration: 80 }
+    ],
+    particles: {
+      count: 8,
+      char: '·',
+      initialColor: '#ffff00',
+      fadeToColor: '#660000',
+      speed: 100,
+      lifetime: 400
+    }
+  });
+}
+
+function createLargeExplosion(x, y) {
+  return new Effect(x, y, {
+    frames: [
+      { char: '█', color: '#ffffff', duration: 60 },
+      { char: '@', color: '#ffff00', duration: 60 },
+      { char: '#', color: '#ff6600', duration: 70 },
+      { char: '%', color: '#ff3300', duration: 70 },
+      { char: '+', color: '#ff0000', duration: 80 },
+      { char: '·', color: '#660000', duration: 100 }
+    ],
+    particles: {
+      count: 20,
+      char: '*',
+      initialColor: '#ffffff',
+      fadeToColor: '#330000',
+      speed: 150,
+      lifetime: 600
+    }
+  });
+}
+
+function createImpactEffect(x, y) {
+  return new Effect(x, y, {
+    frames: [
+      { char: '*', color: '#ffffff', duration: 40 },
+      { char: '·', color: '#ffff00', duration: 40 }
+    ],
+    particles: {
+      count: 3,
+      char: '·',
+      initialColor: '#ffffff',
+      fadeToColor: '#ffff00',
+      speed: 80,
+      lifetime: 200
+    }
+  });
+}
+
+function createMuzzleFlash(x, y, color = '#00ff00') {
+  return new Effect(x, y - 5, {
+    frames: [
+      { char: '*', color: color, duration: 30 },
+      { char: '·', color: color, duration: 20 }
+    ]
+  });
+}
+
+// ============================================================================
 // PLAYER SHIP
 // ============================================================================
 
@@ -457,6 +675,8 @@ class Player extends Entity {
     this.health -= amount;
     if (this.health <= 0) {
       this.health = 0;
+      // Create large explosion on player death
+      game.effects.push(createLargeExplosion(this.x, this.y));
       this.destroy();
     }
     this.updateHealthUI();
@@ -539,6 +759,9 @@ class Enemy extends Entity {
       game.score += this.scoreValue;
       this.updateScoreUI();
     }
+
+    // Create explosion effect
+    game.effects.push(createSmallExplosion(this.x, this.y));
   }
 
   updateScoreUI() {
@@ -779,6 +1002,9 @@ function handleCollisions() {
       if (!enemy.active) return;
 
       if (projectile.collidesWith(enemy)) {
+        // Create impact effect
+        game.effects.push(createImpactEffect(projectile.x, projectile.y));
+
         enemy.takeDamage(projectile.damage);
         projectile.destroy();
       }
@@ -792,7 +1018,8 @@ function handleCollisions() {
 
       if (game.player.collidesWith(enemy)) {
         game.player.takeDamage(25);
-        enemy.destroy();
+        // Enemy explodes on contact (handled by enemy.destroy -> onDeath)
+        enemy.takeDamage(enemy.health); // Instant kill
       }
     });
   }
@@ -847,12 +1074,28 @@ function update(deltaTime) {
     }
   });
 
+  // Update effects
+  game.effects.forEach(effect => {
+    if (effect.active) {
+      effect.update(deltaTime);
+    }
+  });
+
+  // Update particles
+  game.particles.forEach(particle => {
+    if (particle.active) {
+      particle.update(deltaTime);
+    }
+  });
+
   // Handle collisions
   handleCollisions();
 
   // Remove inactive entities
   game.projectiles = game.projectiles.filter(p => p.active);
   game.enemies = game.enemies.filter(e => e.active);
+  game.effects = game.effects.filter(e => e.active);
+  game.particles = game.particles.filter(p => p.active);
 
   // Enemy spawning
   game.enemySpawnTimer += deltaTime * 1000;
@@ -870,6 +1113,20 @@ function render() {
   // Clear canvas
   game.ctx.fillStyle = CONFIG.canvas.backgroundColor;
   game.ctx.fillRect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+
+  // Render particles (background layer)
+  game.particles.forEach(particle => {
+    if (particle.active) {
+      particle.render(game.renderer);
+    }
+  });
+
+  // Render effects (explosions, muzzle flashes)
+  game.effects.forEach(effect => {
+    if (effect.active) {
+      effect.render(game.renderer);
+    }
+  });
 
   // Render enemies
   game.enemies.forEach(enemy => {
@@ -897,6 +1154,8 @@ function render() {
     game.ctx.fillText(`FPS: ${Math.round(1 / game.deltaTime)}`, 10, 10);
     game.ctx.fillText(`Projectiles: ${game.projectiles.length}`, 10, 25);
     game.ctx.fillText(`Enemies: ${game.enemies.length}`, 10, 40);
+    game.ctx.fillText(`Effects: ${game.effects.length}`, 10, 55);
+    game.ctx.fillText(`Particles: ${game.particles.length}`, 10, 70);
   }
 }
 
