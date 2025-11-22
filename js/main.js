@@ -210,10 +210,10 @@ class SniperLaser extends Weapon {
     super({
       id: 'sniper',
       name: 'Sniper Laser',
-      fireRate: 150,
+      fireRate: 350,
       projectileChar: '!',
       projectileColor: '#00ff00',
-      projectileSpeed: 800,
+      projectileSpeed: 1600,
       damage: 15,
       hitboxRadius: 3
     });
@@ -242,7 +242,7 @@ class VulcanCannon extends Weapon {
       fireRate: 80,
       projectileChar: '"',
       projectileColor: '#0099ff',
-      projectileSpeed: 650,
+      projectileSpeed: 900,
       damage: 5,
       hitboxRadius: 2,
       spread: 5
