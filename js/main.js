@@ -912,11 +912,6 @@ class Background {
     this.width = width;
     this.height = height;
     this.createGradient();
-
-    // Ground layer parameters
-    this.groundY = 550;
-    this.groundScrollOffset = 0;
-    this.groundScrollSpeed = 80; // pixels per second
   }
 
   createGradient() {
@@ -929,52 +924,16 @@ class Background {
     this.width = width;
     this.height = height;
     this.createGradient();
-    // Update ground Y position for larger screens
-    this.groundY = Math.min(550, height - 50);
   }
 
   update(deltaTime) {
-    // Scroll ground layer
-    this.groundScrollOffset += this.groundScrollSpeed * deltaTime;
-    // Reset offset to prevent overflow
-    if (this.groundScrollOffset > 100) {
-      this.groundScrollOffset = 0;
-    }
+    // Background doesn't need updates (clouds handle their own scrolling)
   }
 
   render() {
     // Render sky gradient
     this.ctx.fillStyle = this.gradient;
     this.ctx.fillRect(0, 0, this.width, this.height);
-
-    // Render ground layer (distant green pastures)
-    this.renderGroundLayer();
-  }
-
-  renderGroundLayer() {
-    const y = this.groundY + this.groundScrollOffset;
-    const pattern = '═≡-';
-    const spacing = 20; // pixels between pattern elements
-
-    // Draw multiple lines of ground pattern with slight parallax
-    for (let lineOffset = 0; lineOffset < 3; lineOffset++) {
-      const lineY = y + (lineOffset * 10);
-
-      // Skip if below screen
-      if (lineY > this.height) continue;
-
-      // Alternate colors for depth
-      const color = lineOffset === 0 ? '#228b22' : '#32cd32';
-      this.ctx.fillStyle = color;
-      this.ctx.font = 'bold 16px Courier New, monospace';
-
-      // Draw repeating pattern across the width
-      for (let x = -spacing; x < this.width + spacing; x += spacing) {
-        const offsetX = x + (this.groundScrollOffset * (1 + lineOffset * 0.1)) % spacing;
-        const char = pattern[Math.floor((x / spacing) + lineOffset) % pattern.length];
-        this.ctx.fillText(char, offsetX, lineY);
-      }
-    }
   }
 }
 
