@@ -14,6 +14,7 @@ class AudioManager {
     this.masterGain = null;
     this.sfxGain = null;
     this.musicGain = null;
+    this.currentMusic = null;
     this.enabled = true;
     this.initialized = false;
 
@@ -183,6 +184,50 @@ class AudioManager {
   toggleMute() {
     if (this.masterGain) {
       this.masterGain.gain.value = this.masterGain.gain.value > 0 ? 0 : this.volumes.master;
+    }
+  }
+
+  /**
+   * Load and play background music
+   * @param {string} url - Path to audio file
+   * @param {boolean} loop - Whether to loop the music
+   */
+  async loadAndPlayMusic(url, loop = true) {
+    if (!this.enabled || !this.initialized) {
+      console.warn('Audio not initialized, cannot play music');
+      return;
+    }
+
+    try {
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+
+      // Stop current music if playing
+      if (this.currentMusic) {
+        this.currentMusic.stop();
+      }
+
+      // Create new buffer source
+      this.currentMusic = this.ctx.createBufferSource();
+      this.currentMusic.buffer = audioBuffer;
+      this.currentMusic.loop = loop;
+      this.currentMusic.connect(this.musicGain);
+      this.currentMusic.start(0);
+
+      console.log('Music started:', url);
+    } catch (error) {
+      console.error('Failed to load music:', error);
+    }
+  }
+
+  /**
+   * Stop background music
+   */
+  stopMusic() {
+    if (this.currentMusic) {
+      this.currentMusic.stop();
+      this.currentMusic = null;
     }
   }
 }
@@ -1337,7 +1382,9 @@ class Enemy extends Entity {
         projectiles.push(new Projectile(this.x, this.y + 10, config));
       }
     } else {
-      // Fire straight down
+      // Fire straight down (positive Y is downward)
+      config.vx = 0;
+      config.vy = this.weapon.projectileSpeed;
       projectiles.push(new Projectile(this.x, this.y + 10, config));
     }
 
@@ -1725,6 +1772,18 @@ class InputManager {
     // Update gamepad state
     const gamepad = this.getGamepad();
     if (gamepad) {
+      // Initialize audio on first gamepad button press
+      if (game.audioManager && !game.audioManager.initialized) {
+        const anyButtonPressed = gamepad.buttons.some(button => button.pressed);
+        if (anyButtonPressed) {
+          game.audioManager.init();
+          // Start music after audio is initialized
+          if (game.audioManager.initialized) {
+            game.audioManager.loadAndPlayMusic('/Raptorface - Cherryblossom.mp3');
+          }
+        }
+      }
+
       // Update button states
       gamepad.buttons.forEach((button, index) => {
         this.gamepadButtons[index] = button.pressed;
@@ -1849,14 +1908,16 @@ async function init() {
   // Create audio manager
   game.audioManager = new AudioManager();
 
-  // Initialize audio on first user interaction
-  const initAudio = () => {
+  // Try to initialize audio immediately (will work on some browsers)
+  // If it fails, we'll retry on first user interaction in the game loop
+  try {
     game.audioManager.init();
-    document.removeEventListener('keydown', initAudio);
-    document.removeEventListener('click', initAudio);
-  };
-  document.addEventListener('keydown', initAudio);
-  document.addEventListener('click', initAudio);
+    if (game.audioManager.initialized) {
+      game.audioManager.loadAndPlayMusic('/Raptorface - Cherryblossom.mp3');
+    }
+  } catch (error) {
+    console.log('Audio autoplay blocked, will initialize on user interaction');
+  }
 
   // Create asset loader
   game.assetLoader = new AssetLoader();
