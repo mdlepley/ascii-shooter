@@ -44,7 +44,12 @@ const game = {
   lastTime: 0,
   deltaTime: 0,
   entities: [],
-  player: null
+  player: null,
+  projectiles: [],
+  enemies: [],
+  score: 0,
+  enemySpawnTimer: 0,
+  enemySpawnInterval: 2000 // milliseconds between enemy spawns
 };
 
 // ============================================================================
@@ -112,6 +117,7 @@ class Entity {
     this.y = y;
     this.active = true;
     this.type = 'entity';
+    this.hitboxRadius = 0;
   }
 
   update(deltaTime) {
@@ -124,6 +130,248 @@ class Entity {
 
   destroy() {
     this.active = false;
+  }
+
+  // Circular collision detection
+  collidesWith(other) {
+    const dx = this.x - other.x;
+    const dy = this.y - other.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    return distance < (this.hitboxRadius + other.hitboxRadius);
+  }
+}
+
+// ============================================================================
+// PROJECTILE CLASS
+// ============================================================================
+
+class Projectile extends Entity {
+  constructor(x, y, config) {
+    super(x, y);
+    this.type = 'projectile';
+    this.vx = config.vx || 0;
+    this.vy = config.vy || -config.speed; // Default upward
+    this.char = config.char || '!';
+    this.color = config.color || '#ffffff';
+    this.damage = config.damage || 10;
+    this.hitboxRadius = config.hitboxRadius || 3;
+    this.owner = config.owner || 'player'; // 'player' or 'enemy'
+  }
+
+  update(deltaTime) {
+    this.x += this.vx * deltaTime;
+    this.y += this.vy * deltaTime;
+
+    // Destroy if off screen
+    if (this.y < -50 || this.y > CONFIG.canvas.height + 50 ||
+        this.x < -50 || this.x > CONFIG.canvas.width + 50) {
+      this.destroy();
+    }
+  }
+
+  render(renderer) {
+    renderer.drawText(this.char, this.x, this.y, this.color);
+  }
+}
+
+// ============================================================================
+// WEAPON SYSTEMS
+// ============================================================================
+
+class Weapon {
+  constructor(config) {
+    this.id = config.id;
+    this.name = config.name;
+    this.fireRate = config.fireRate; // milliseconds between shots
+    this.lastFireTime = 0;
+    this.config = config;
+  }
+
+  canFire(currentTime) {
+    return (currentTime - this.lastFireTime) >= this.fireRate;
+  }
+
+  fire(x, y, currentTime) {
+    if (!this.canFire(currentTime)) return [];
+    this.lastFireTime = currentTime;
+    return this.createProjectiles(x, y);
+  }
+
+  createProjectiles(x, y) {
+    // Override in subclasses
+    return [];
+  }
+}
+
+class SniperLaser extends Weapon {
+  constructor() {
+    super({
+      id: 'sniper',
+      name: 'Sniper Laser',
+      fireRate: 150,
+      projectileChar: '!',
+      projectileColor: '#00ff00',
+      projectileSpeed: 800,
+      damage: 15,
+      hitboxRadius: 3
+    });
+  }
+
+  createProjectiles(x, y) {
+    return [new Projectile(x, y - 10, {
+      speed: this.config.projectileSpeed,
+      char: this.config.projectileChar,
+      color: this.config.projectileColor,
+      damage: this.config.damage,
+      hitboxRadius: this.config.hitboxRadius,
+      owner: 'player'
+    })];
+  }
+}
+
+class VulcanCannon extends Weapon {
+  constructor() {
+    super({
+      id: 'vulcan',
+      name: 'Vulcan 50cal',
+      fireRate: 80,
+      projectileChar: '"',
+      projectileColor: '#0099ff',
+      projectileSpeed: 650,
+      damage: 5,
+      hitboxRadius: 2,
+      spread: 5
+    });
+  }
+
+  createProjectiles(x, y) {
+    // Random horizontal spread
+    const spreadOffset = (Math.random() - 0.5) * this.config.spread * 2;
+    return [new Projectile(x + spreadOffset, y - 10, {
+      speed: this.config.projectileSpeed,
+      char: this.config.projectileChar,
+      color: this.config.projectileColor,
+      damage: this.config.damage,
+      hitboxRadius: this.config.hitboxRadius,
+      owner: 'player'
+    })];
+  }
+}
+
+class RocketLauncher extends Weapon {
+  constructor() {
+    super({
+      id: 'rocket',
+      name: 'Homing Rockets',
+      fireRate: 500,
+      projectileSpeed: 400,
+      damage: 50,
+      hitboxRadius: 5
+    });
+    this.ammo = 10;
+    this.maxAmmo = 10;
+  }
+
+  canFire(currentTime) {
+    return super.canFire(currentTime) && this.ammo > 0;
+  }
+
+  fire(x, y, currentTime) {
+    const projectiles = super.fire(x, y, currentTime);
+    if (projectiles.length > 0) {
+      this.ammo--;
+    }
+    return projectiles;
+  }
+
+  createProjectiles(x, y) {
+    return [new Rocket(x, y - 10, {
+      speed: this.config.projectileSpeed,
+      damage: this.config.damage,
+      hitboxRadius: this.config.hitboxRadius,
+      owner: 'player'
+    })];
+  }
+}
+
+class Rocket extends Projectile {
+  constructor(x, y, config) {
+    super(x, y, {
+      ...config,
+      speed: config.speed,
+      char: '^',
+      color: '#ffaa00'
+    });
+    this.type = 'rocket';
+    this.homingStrength = 0.3;
+    this.acceleration = 100;
+    this.age = 0;
+    this.homingActivation = 0.2; // seconds before homing starts
+  }
+
+  update(deltaTime) {
+    this.age += deltaTime;
+
+    // Apply acceleration
+    const currentSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    const newSpeed = currentSpeed + this.acceleration * deltaTime;
+
+    // Homing behavior after activation delay
+    if (this.age >= this.homingActivation && game.enemies.length > 0) {
+      // Find nearest enemy
+      let nearestEnemy = null;
+      let nearestDist = Infinity;
+
+      game.enemies.forEach(enemy => {
+        if (enemy.active) {
+          const dx = enemy.x - this.x;
+          const dy = enemy.y - this.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestEnemy = enemy;
+          }
+        }
+      });
+
+      if (nearestEnemy) {
+        // Calculate direction to enemy
+        const dx = nearestEnemy.x - this.x;
+        const dy = nearestEnemy.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 0) {
+          // Blend current direction with target direction
+          const targetVx = (dx / dist) * newSpeed;
+          const targetVy = (dy / dist) * newSpeed;
+
+          this.vx += (targetVx - this.vx) * this.homingStrength;
+          this.vy += (targetVy - this.vy) * this.homingStrength;
+        }
+      }
+    } else {
+      // Just accelerate in current direction
+      if (currentSpeed > 0) {
+        this.vx = (this.vx / currentSpeed) * newSpeed;
+        this.vy = (this.vy / currentSpeed) * newSpeed;
+      }
+    }
+
+    // Update position
+    this.x += this.vx * deltaTime;
+    this.y += this.vy * deltaTime;
+
+    // Destroy if off screen
+    if (this.y < -50 || this.y > CONFIG.canvas.height + 50 ||
+        this.x < -50 || this.x > CONFIG.canvas.width + 50) {
+      this.destroy();
+    }
+  }
+
+  render(renderer) {
+    // Render rocket body
+    renderer.drawText('^', this.x - 2, this.y, this.color);
+    renderer.drawText('*', this.x - 2, this.y + CONFIG.font.size, '#ff6600');
   }
 }
 
@@ -152,11 +400,73 @@ class Player extends Entity {
     // Combat
     this.health = 100;
     this.maxHealth = 100;
+    this.hitboxRadius = 8; // from GDB
+
+    // Weapons
+    this.weapons = [
+      new SniperLaser(),
+      new VulcanCannon()
+    ];
+    this.currentWeaponIndex = 0;
+    this.rocketLauncher = new RocketLauncher();
 
     // Animation
     this.thrustFrame = 0;
     this.thrustTimer = 0;
     this.thrustInterval = 100; // ms
+  }
+
+  getCurrentWeapon() {
+    return this.weapons[this.currentWeaponIndex];
+  }
+
+  switchWeapon() {
+    this.currentWeaponIndex = (this.currentWeaponIndex + 1) % this.weapons.length;
+    this.updateWeaponUI();
+  }
+
+  updateWeaponUI() {
+    // Update UI to show current weapon
+    document.querySelectorAll('.weapon').forEach(el => {
+      el.classList.remove('ui-current-weapon');
+    });
+
+    const weaponId = this.getCurrentWeapon().id;
+    const uiElement = document.getElementById(`ui-${weaponId}-weapon`);
+    if (uiElement) {
+      uiElement.classList.add('ui-current-weapon');
+    }
+
+    // Update rocket ammo display
+    const rocketAmmoEl = document.querySelector('#ui-rocket-weapon .ammo');
+    if (rocketAmmoEl) {
+      rocketAmmoEl.textContent = this.rocketLauncher.ammo;
+    }
+  }
+
+  fire(currentTime) {
+    const weapon = this.getCurrentWeapon();
+    return weapon.fire(this.x, this.y, currentTime);
+  }
+
+  fireRocket(currentTime) {
+    return this.rocketLauncher.fire(this.x, this.y, currentTime);
+  }
+
+  takeDamage(amount) {
+    this.health -= amount;
+    if (this.health <= 0) {
+      this.health = 0;
+      this.destroy();
+    }
+    this.updateHealthUI();
+  }
+
+  updateHealthUI() {
+    const healthEl = document.querySelector('#health span');
+    if (healthEl) {
+      healthEl.textContent = this.health;
+    }
   }
 
   update(deltaTime) {
@@ -198,12 +508,99 @@ class Player extends Entity {
 }
 
 // ============================================================================
+// ENEMY CLASSES
+// ============================================================================
+
+class Enemy extends Entity {
+  constructor(x, y, config) {
+    super(x, y);
+    this.type = 'enemy';
+    this.art = config.art || '???';
+    this.color = config.color || '#ff0000';
+    this.health = config.health || 10;
+    this.maxHealth = this.health;
+    this.hitboxRadius = config.hitboxRadius || 8;
+    this.scoreValue = config.scoreValue || 100;
+    this.speed = config.speed || 100;
+  }
+
+  takeDamage(amount) {
+    this.health -= amount;
+    if (this.health <= 0) {
+      this.health = 0;
+      this.onDeath();
+      this.destroy();
+    }
+  }
+
+  onDeath() {
+    // Add score
+    if (game.score !== undefined) {
+      game.score += this.scoreValue;
+      this.updateScoreUI();
+    }
+  }
+
+  updateScoreUI() {
+    const scoreEl = document.querySelector('#score span');
+    if (scoreEl) {
+      scoreEl.textContent = game.score;
+    }
+  }
+
+  render(renderer) {
+    if (Array.isArray(this.art)) {
+      renderer.drawMultiLine(this.art, this.x, this.y, this.color);
+    } else {
+      renderer.drawText(this.art, this.x, this.y, this.color);
+    }
+  }
+}
+
+class Scout extends Enemy {
+  constructor(x, y) {
+    super(x, y, {
+      art: '{[::]}',
+      color: '#ff3300',
+      health: 10,
+      hitboxRadius: 8,
+      speed: 120,
+      scoreValue: 100
+    });
+
+    // Sine wave movement parameters
+    this.amplitude = 50;
+    this.frequency = 2;
+    this.baseSpeed = 120;
+    this.startX = x;
+    this.time = 0;
+  }
+
+  update(deltaTime) {
+    this.time += deltaTime;
+
+    // Sine wave horizontal movement
+    const sineOffset = Math.sin(this.time * this.frequency) * this.amplitude;
+    this.x = this.startX + sineOffset;
+
+    // Move downward
+    this.y += this.baseSpeed * deltaTime;
+
+    // Destroy if off screen
+    if (this.y > CONFIG.canvas.height + 50) {
+      this.destroy();
+    }
+  }
+}
+
+// ============================================================================
 // INPUT MANAGER
 // ============================================================================
 
 class InputManager {
   constructor() {
     this.keys = {};
+    this.previousKeys = {};
     this.setupEventListeners();
   }
 
@@ -224,6 +621,15 @@ class InputManager {
 
   isKeyDown(code) {
     return this.keys[code] === true;
+  }
+
+  wasKeyJustPressed(code) {
+    return this.keys[code] === true && this.previousKeys[code] !== true;
+  }
+
+  update() {
+    // Store previous key states for just-pressed detection
+    this.previousKeys = { ...this.keys };
   }
 
   getMovementVector() {
@@ -303,7 +709,14 @@ function init() {
 
   // Create player
   game.player = new Player(CONFIG.canvas.width / 2, CONFIG.canvas.height - 100);
-  game.entities.push(game.player);
+
+  // Initialize UI
+  game.player.updateHealthUI();
+  game.player.updateWeaponUI();
+  const scoreEl = document.querySelector('#score span');
+  if (scoreEl) {
+    scoreEl.textContent = game.score;
+  }
 
   // Handle window resize
   window.addEventListener('resize', () => {
@@ -343,23 +756,110 @@ function gameLoop(currentTime) {
 }
 
 // ============================================================================
+// ENEMY SPAWNING
+// ============================================================================
+
+function spawnEnemy() {
+  // Spawn at random X position at top of screen
+  const x = Math.random() * (CONFIG.canvas.width - 100) + 50;
+  const enemy = new Scout(x, -20);
+  game.enemies.push(enemy);
+}
+
+// ============================================================================
+// COLLISION DETECTION
+// ============================================================================
+
+function handleCollisions() {
+  // Player projectiles vs Enemies
+  game.projectiles.forEach(projectile => {
+    if (!projectile.active || projectile.owner !== 'player') return;
+
+    game.enemies.forEach(enemy => {
+      if (!enemy.active) return;
+
+      if (projectile.collidesWith(enemy)) {
+        enemy.takeDamage(projectile.damage);
+        projectile.destroy();
+      }
+    });
+  });
+
+  // Player vs Enemies (collision damage)
+  if (game.player && game.player.active) {
+    game.enemies.forEach(enemy => {
+      if (!enemy.active) return;
+
+      if (game.player.collidesWith(enemy)) {
+        game.player.takeDamage(25);
+        enemy.destroy();
+      }
+    });
+  }
+}
+
+// ============================================================================
 // UPDATE
 // ============================================================================
 
 function update(deltaTime) {
+  if (!game.player || !game.player.active) return;
+
   // Handle input
   const movement = game.input.getMovementVector();
   game.player.move(movement.dx, movement.dy);
 
-  // Update all entities
-  game.entities.forEach(entity => {
-    if (entity.active) {
-      entity.update(deltaTime);
+  // Handle shooting
+  if (game.input.isKeyDown('Space')) {
+    const projectiles = game.player.fire(performance.now());
+    game.projectiles.push(...projectiles);
+  }
+
+  // Handle weapon switching
+  if (game.input.wasKeyJustPressed('KeyE')) {
+    game.player.switchWeapon();
+  }
+
+  // Handle rocket firing
+  if (game.input.wasKeyJustPressed('KeyR')) {
+    const projectiles = game.player.fireRocket(performance.now());
+    game.projectiles.push(...projectiles);
+    game.player.updateWeaponUI();
+  }
+
+  // Update input state
+  game.input.update();
+
+  // Update player
+  game.player.update(deltaTime);
+
+  // Update projectiles
+  game.projectiles.forEach(projectile => {
+    if (projectile.active) {
+      projectile.update(deltaTime);
     }
   });
 
+  // Update enemies
+  game.enemies.forEach(enemy => {
+    if (enemy.active) {
+      enemy.update(deltaTime);
+    }
+  });
+
+  // Handle collisions
+  handleCollisions();
+
   // Remove inactive entities
-  game.entities = game.entities.filter(entity => entity.active);
+  game.projectiles = game.projectiles.filter(p => p.active);
+  game.enemies = game.enemies.filter(e => e.active);
+
+  // Enemy spawning
+  game.enemySpawnTimer += deltaTime * 1000;
+  if (game.enemySpawnTimer >= game.enemySpawnInterval) {
+    spawnEnemy();
+    game.enemySpawnTimer = 0;
+  }
 }
 
 // ============================================================================
@@ -371,19 +871,32 @@ function render() {
   game.ctx.fillStyle = CONFIG.canvas.backgroundColor;
   game.ctx.fillRect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
 
-  // Render all entities
-  game.entities.forEach(entity => {
-    if (entity.active) {
-      entity.render(game.renderer);
+  // Render enemies
+  game.enemies.forEach(enemy => {
+    if (enemy.active) {
+      enemy.render(game.renderer);
     }
   });
+
+  // Render projectiles
+  game.projectiles.forEach(projectile => {
+    if (projectile.active) {
+      projectile.render(game.renderer);
+    }
+  });
+
+  // Render player
+  if (game.player && game.player.active) {
+    game.player.render(game.renderer);
+  }
 
   // Debug info (optional)
   if (false) { // Set to true for debugging
     game.ctx.fillStyle = '#00ff00';
     game.ctx.font = '12px monospace';
     game.ctx.fillText(`FPS: ${Math.round(1 / game.deltaTime)}`, 10, 10);
-    game.ctx.fillText(`Entities: ${game.entities.length}`, 10, 25);
+    game.ctx.fillText(`Projectiles: ${game.projectiles.length}`, 10, 25);
+    game.ctx.fillText(`Enemies: ${game.enemies.length}`, 10, 40);
   }
 }
 
