@@ -13,7 +13,7 @@ const CONFIG = {
     minHeight: 600,
     width: 800,  // Will be updated dynamically
     height: 600, // Will be updated dynamically
-    backgroundColor: '#000000'
+    backgroundColor: '#4682B4' // Steel blue (bottom of gradient)
   },
   targetFPS: 60,
   font: {
@@ -30,6 +30,12 @@ const CONFIG = {
       left: 20,
       right: 780
     }
+  },
+  background: {
+    skyGradientTop: '#87CEEB',    // Light sky blue
+    skyGradientBottom: '#4682B4',  // Steel blue
+    cloudSpawnInterval: 2000,      // milliseconds
+    cloudSpawnVariance: 1000       // random variance
   }
 };
 
@@ -49,9 +55,12 @@ const game = {
   enemies: [],
   effects: [],
   particles: [],
+  clouds: [],
+  background: null,
   score: 0,
   enemySpawnTimer: 0,
-  enemySpawnInterval: 2000 // milliseconds between enemy spawns
+  enemySpawnInterval: 2000, // milliseconds between enemy spawns
+  cloudSpawnTimer: 0
 };
 
 // ============================================================================
@@ -607,6 +616,140 @@ function createMuzzleFlash(x, y, color = '#00ff00') {
 }
 
 // ============================================================================
+// BACKGROUND SYSTEM
+// ============================================================================
+
+class Background {
+  constructor(ctx, width, height) {
+    this.ctx = ctx;
+    this.width = width;
+    this.height = height;
+    this.createGradient();
+  }
+
+  createGradient() {
+    this.gradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
+    this.gradient.addColorStop(0, CONFIG.background.skyGradientTop);
+    this.gradient.addColorStop(1, CONFIG.background.skyGradientBottom);
+  }
+
+  resize(width, height) {
+    this.width = width;
+    this.height = height;
+    this.createGradient();
+  }
+
+  render() {
+    this.ctx.fillStyle = this.gradient;
+    this.ctx.fillRect(0, 0, this.width, this.height);
+  }
+}
+
+class Cloud extends Entity {
+  constructor(x, y, config) {
+    super(x, y);
+    this.type = 'cloud';
+    this.art = config.art;
+    this.color = config.color;
+    this.speed = config.speed; // Downward scroll speed
+    this.layer = config.layer; // 'far' or 'near'
+  }
+
+  update(deltaTime) {
+    // Clouds scroll downward
+    this.y += this.speed * deltaTime;
+
+    // Destroy if off screen
+    if (this.y > CONFIG.canvas.height + 100) {
+      this.destroy();
+    }
+  }
+
+  render(renderer) {
+    if (Array.isArray(this.art)) {
+      renderer.drawMultiLine(this.art, this.x, this.y, this.color);
+    } else {
+      renderer.drawTextCentered(this.art, this.x, this.y, this.color);
+    }
+  }
+}
+
+// ============================================================================
+// CLOUD FACTORIES
+// ============================================================================
+
+function createFarCloud() {
+  const types = [
+    { art: '░░▒░', chance: 0.4 },
+    { art: ['░▒░', '▒░▒'], chance: 0.3 },
+    { art: '░▒', chance: 0.3 }
+  ];
+
+  // Weighted random selection
+  const rand = Math.random();
+  let cumulative = 0;
+  let selectedType = types[0];
+
+  for (const type of types) {
+    cumulative += type.chance;
+    if (rand <= cumulative) {
+      selectedType = type;
+      break;
+    }
+  }
+
+  const x = Math.random() * CONFIG.canvas.width;
+  const y = -50;
+
+  return new Cloud(x, y, {
+    art: selectedType.art,
+    color: '#f0f8ff', // Alice blue
+    speed: 20,
+    layer: 'far'
+  });
+}
+
+function createNearCloud() {
+  const types = [
+    {
+      art: ['  ░▒▓▓▒░  ', ' ░▒▓██▓▒░ ', '░▒▓████▓▒░'],
+      chance: 0.2 // Large
+    },
+    {
+      art: [' ░▒▓▒░ ', '░▒▓█▓▒░'],
+      chance: 0.4 // Medium
+    },
+    {
+      art: '▒▓█',
+      chance: 0.4 // Small
+    }
+  ];
+
+  // Weighted random selection
+  const rand = Math.random();
+  let cumulative = 0;
+  let selectedType = types[0];
+
+  for (const type of types) {
+    cumulative += type.chance;
+    if (rand <= cumulative) {
+      selectedType = type;
+      break;
+    }
+  }
+
+  const x = Math.random() * CONFIG.canvas.width;
+  const y = -50;
+
+  return new Cloud(x, y, {
+    art: selectedType.art,
+    color: '#ffffff', // White
+    speed: 40,
+    layer: 'near'
+  });
+}
+
+// ============================================================================
 // PLAYER SHIP
 // ============================================================================
 
@@ -966,6 +1109,11 @@ function updateCanvasSize() {
     game.player.x = Math.max(CONFIG.player.bounds.left, Math.min(CONFIG.player.bounds.right, game.player.x));
     game.player.y = Math.max(CONFIG.player.bounds.top, Math.min(CONFIG.player.bounds.bottom, game.player.y));
   }
+
+  // Resize background gradient
+  if (game.background) {
+    game.background.resize(width, height);
+  }
 }
 
 // ============================================================================
@@ -985,6 +1133,9 @@ function init() {
   // Set initial canvas size
   updateCanvasSize();
 
+  // Create background
+  game.background = new Background(game.ctx, CONFIG.canvas.width, CONFIG.canvas.height);
+
   // Create renderer
   game.renderer = new ASCIIRenderer(game.ctx);
 
@@ -1000,6 +1151,12 @@ function init() {
   const scoreEl = document.querySelector('#score span');
   if (scoreEl) {
     scoreEl.textContent = game.score;
+  }
+
+  // Spawn initial clouds
+  for (let i = 0; i < 5; i++) {
+    game.clouds.push(createFarCloud());
+    game.clouds.push(createNearCloud());
   }
 
   // Handle window resize
@@ -1149,6 +1306,13 @@ function update(deltaTime) {
     }
   });
 
+  // Update clouds
+  game.clouds.forEach(cloud => {
+    if (cloud.active) {
+      cloud.update(deltaTime);
+    }
+  });
+
   // Handle collisions
   handleCollisions();
 
@@ -1157,12 +1321,27 @@ function update(deltaTime) {
   game.enemies = game.enemies.filter(e => e.active);
   game.effects = game.effects.filter(e => e.active);
   game.particles = game.particles.filter(p => p.active);
+  game.clouds = game.clouds.filter(c => c.active);
 
   // Enemy spawning
   game.enemySpawnTimer += deltaTime * 1000;
   if (game.enemySpawnTimer >= game.enemySpawnInterval) {
     spawnEnemy();
     game.enemySpawnTimer = 0;
+  }
+
+  // Cloud spawning
+  game.cloudSpawnTimer += deltaTime * 1000;
+  const cloudInterval = CONFIG.background.cloudSpawnInterval +
+                        (Math.random() - 0.5) * CONFIG.background.cloudSpawnVariance;
+  if (game.cloudSpawnTimer >= cloudInterval) {
+    // Randomly spawn far or near clouds
+    if (Math.random() > 0.5) {
+      game.clouds.push(createFarCloud());
+    } else {
+      game.clouds.push(createNearCloud());
+    }
+    game.cloudSpawnTimer = 0;
   }
 }
 
@@ -1171,11 +1350,26 @@ function update(deltaTime) {
 // ============================================================================
 
 function render() {
-  // Clear canvas
-  game.ctx.fillStyle = CONFIG.canvas.backgroundColor;
-  game.ctx.fillRect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+  // Render sky gradient background
+  if (game.background) {
+    game.background.render();
+  }
 
-  // Render particles (background layer)
+  // Render far clouds (slower parallax layer)
+  game.clouds.forEach(cloud => {
+    if (cloud.active && cloud.layer === 'far') {
+      cloud.render(game.renderer);
+    }
+  });
+
+  // Render near clouds (faster parallax layer)
+  game.clouds.forEach(cloud => {
+    if (cloud.active && cloud.layer === 'near') {
+      cloud.render(game.renderer);
+    }
+  });
+
+  // Render particles (debris, etc)
   game.particles.forEach(particle => {
     if (particle.active) {
       particle.render(game.renderer);
@@ -1217,6 +1411,7 @@ function render() {
     game.ctx.fillText(`Enemies: ${game.enemies.length}`, 10, 40);
     game.ctx.fillText(`Effects: ${game.effects.length}`, 10, 55);
     game.ctx.fillText(`Particles: ${game.particles.length}`, 10, 70);
+    game.ctx.fillText(`Clouds: ${game.clouds.length}`, 10, 85);
   }
 }
 
