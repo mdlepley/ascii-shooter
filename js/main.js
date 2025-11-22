@@ -13,7 +13,7 @@ const CONFIG = {
     minHeight: 600,
     width: 800,  // Will be updated dynamically
     height: 600, // Will be updated dynamically
-    backgroundColor: '#2d5016' // Dark forest green (terrain base)
+    backgroundColor: '#4682B4' // Steel blue
   },
   targetFPS: 60,
   font: {
@@ -32,17 +32,10 @@ const CONFIG = {
     }
   },
   background: {
-    terrainBaseColor: '#2d5016',   // Dark forest green
-    terrainVariantColors: [
-      '#3a6b1f',  // Medium green (fields)
-      '#2d5016',  // Dark green (forests)
-      '#4a7c2a',  // Light green (pastures)
-      '#5d8f38'   // Bright green (crops)
-    ],
+    skyGradientTop: '#87CEEB',    // Light sky blue
+    skyGradientBottom: '#4682B4',  // Steel blue
     cloudSpawnInterval: 2000,      // milliseconds
-    cloudSpawnVariance: 1000,      // random variance
-    terrainSpawnInterval: 800,     // milliseconds
-    terrainSpawnVariance: 400      // random variance
+    cloudSpawnVariance: 1000       // random variance
   }
 };
 
@@ -63,13 +56,11 @@ const game = {
   effects: [],
   particles: [],
   clouds: [],
-  terrainElements: [],
   background: null,
   score: 0,
   enemySpawnTimer: 0,
   enemySpawnInterval: 2000, // milliseconds between enemy spawns
-  cloudSpawnTimer: 0,
-  terrainSpawnTimer: 0
+  cloudSpawnTimer: 0
 };
 
 // ============================================================================
@@ -633,16 +624,23 @@ class Background {
     this.ctx = ctx;
     this.width = width;
     this.height = height;
+    this.createGradient();
+  }
+
+  createGradient() {
+    this.gradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
+    this.gradient.addColorStop(0, CONFIG.background.skyGradientTop);
+    this.gradient.addColorStop(1, CONFIG.background.skyGradientBottom);
   }
 
   resize(width, height) {
     this.width = width;
     this.height = height;
+    this.createGradient();
   }
 
   render() {
-    // Render verdant green terrain base
-    this.ctx.fillStyle = CONFIG.background.terrainBaseColor;
+    this.ctx.fillStyle = this.gradient;
     this.ctx.fillRect(0, 0, this.width, this.height);
   }
 }
@@ -677,205 +675,35 @@ class Cloud extends Entity {
 }
 
 // ============================================================================
-// TERRAIN ELEMENT CLASS
-// ============================================================================
-
-class TerrainElement extends Entity {
-  constructor(x, y, config) {
-    super(x, y);
-    this.type = 'terrain';
-    this.art = config.art;
-    this.color = config.color;
-    this.speed = config.speed || 80; // Terrain scrolls slower than near clouds
-    this.category = config.category || 'field';
-  }
-
-  update(deltaTime) {
-    // Terrain scrolls downward
-    this.y += this.speed * deltaTime;
-
-    // Destroy if off screen
-    if (this.y > CONFIG.canvas.height + 100) {
-      this.destroy();
-    }
-  }
-
-  render(renderer) {
-    if (Array.isArray(this.art)) {
-      renderer.drawMultiLine(this.art, this.x, this.y, this.color);
-    } else {
-      renderer.drawTextCentered(this.art, this.x, this.y, this.color);
-    }
-  }
-}
-
-// ============================================================================
-// TERRAIN FACTORIES
-// ============================================================================
-
-function createField() {
-  const colors = CONFIG.background.terrainVariantColors;
-  const color = colors[Math.floor(Math.random() * colors.length)];
-
-  const types = [
-    { art: '░░░░░░', chance: 0.3 },           // Small field
-    { art: '▒▒▒▒▒▒▒▒', chance: 0.3 },         // Medium field
-    { art: ['░░░░░░░░', '▒▒▒▒▒▒▒▒'], chance: 0.2 }, // Striped field
-    { art: '▓▓▓▓', chance: 0.2 }              // Dense crop
-  ];
-
-  const rand = Math.random();
-  let cumulative = 0;
-  let selectedType = types[0];
-
-  for (const type of types) {
-    cumulative += type.chance;
-    if (rand <= cumulative) {
-      selectedType = type;
-      break;
-    }
-  }
-
-  const x = Math.random() * CONFIG.canvas.width;
-  const y = -50;
-
-  return new TerrainElement(x, y, {
-    art: selectedType.art,
-    color: color,
-    speed: 80,
-    category: 'field'
-  });
-}
-
-function createForest() {
-  const types = [
-    { art: '▓▓▓', chance: 0.4 },              // Small forest
-    { art: ['▓▓▓▓', '▓▓▓▓'], chance: 0.3 },   // Medium forest
-    { art: ['▓▓▓▓▓▓', ' ▓▓▓▓ ', '  ▓▓  '], chance: 0.3 } // Large forest
-  ];
-
-  const rand = Math.random();
-  let cumulative = 0;
-  let selectedType = types[0];
-
-  for (const type of types) {
-    cumulative += type.chance;
-    if (rand <= cumulative) {
-      selectedType = type;
-      break;
-    }
-  }
-
-  const x = Math.random() * CONFIG.canvas.width;
-  const y = -50;
-
-  return new TerrainElement(x, y, {
-    art: selectedType.art,
-    color: '#1a3d0a', // Dark forest green
-    speed: 80,
-    category: 'forest'
-  });
-}
-
-function createHousing() {
-  const types = [
-    { art: '■', chance: 0.5 },                // Single house
-    { art: '■ ■', chance: 0.3 },              // Two houses
-    { art: ['■ ■', ' ■ '], chance: 0.2 }      // Small cluster
-  ];
-
-  const rand = Math.random();
-  let cumulative = 0;
-  let selectedType = types[0];
-
-  for (const type of types) {
-    cumulative += type.chance;
-    if (rand <= cumulative) {
-      selectedType = type;
-      break;
-    }
-  }
-
-  const x = Math.random() * CONFIG.canvas.width;
-  const y = -50;
-
-  return new TerrainElement(x, y, {
-    art: selectedType.art,
-    color: '#8b7355', // Brown
-    speed: 80,
-    category: 'housing'
-  });
-}
-
-function createRanch() {
-  const types = [
-    { art: ['┌──┐', '│··│', '└──┘'], chance: 0.5 },      // Small ranch
-    { art: ['┌────┐', '│·■··│', '└────┘'], chance: 0.3 }, // Medium ranch with barn
-    { art: ['┌──┐ ┌──┐', '│··│ │··│'], chance: 0.2 }     // Double pens
-  ];
-
-  const rand = Math.random();
-  let cumulative = 0;
-  let selectedType = types[0];
-
-  for (const type of types) {
-    cumulative += type.chance;
-    if (rand <= cumulative) {
-      selectedType = type;
-      break;
-    }
-  }
-
-  const x = Math.random() * CONFIG.canvas.width;
-  const y = -50;
-
-  return new TerrainElement(x, y, {
-    art: selectedType.art,
-    color: '#6b5d4f', // Brown-gray
-    speed: 80,
-    category: 'ranch'
-  });
-}
-
-function createHills() {
-  const types = [
-    { art: '░▒▓▒░', chance: 0.4 },                      // Small hill
-    { art: ['  ░▒▓▒░  ', ' ░▒▓▓▓▒░ '], chance: 0.3 },  // Medium hill
-    { art: '░▒░', chance: 0.3 }                         // Tiny hill
-  ];
-
-  const rand = Math.random();
-  let cumulative = 0;
-  let selectedType = types[0];
-
-  for (const type of types) {
-    cumulative += type.chance;
-    if (rand <= cumulative) {
-      selectedType = type;
-      break;
-    }
-  }
-
-  const x = Math.random() * CONFIG.canvas.width;
-  const y = -50;
-
-  return new TerrainElement(x, y, {
-    art: selectedType.art,
-    color: '#4a7c2a', // Lighter green for hills
-    speed: 80,
-    category: 'hills'
-  });
-}
-
-// ============================================================================
 // CLOUD FACTORIES
 // ============================================================================
 
 function createFarCloud() {
   const types = [
-    { art: '░░▒░', chance: 0.4 },
-    { art: ['░▒░', '▒░▒'], chance: 0.3 },
-    { art: '░▒', chance: 0.3 }
+    {
+      art: [
+        '    ░░░░░░░░░░░░    ',
+        '  ░░▒▒▒▒▒▒▒▒▒▒▒▒░░  ',
+        '░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░'
+      ],
+      chance: 0.3
+    },
+    {
+      art: [
+        '  ░░░░░░░░░░  ',
+        '░░▒▒▒▒▒▒▒▒▒▒░░',
+        '░▒▒▒▒▒▒▒▒▒▒▒▒░'
+      ],
+      chance: 0.4
+    },
+    {
+      art: [
+        '░░░░░░░░░░',
+        '░▒▒▒▒▒▒▒▒░',
+        '░░▒▒▒▒▒░░░'
+      ],
+      chance: 0.3
+    }
   ];
 
   // Weighted random selection
@@ -905,16 +733,36 @@ function createFarCloud() {
 function createNearCloud() {
   const types = [
     {
-      art: ['  ░▒▓▓▒░  ', ' ░▒▓██▓▒░ ', '░▒▓████▓▒░'],
-      chance: 0.2 // Large
+      art: [
+        '      ░░░▒▒▓▓▓▓▓▓▒▒░░░      ',
+        '    ░░▒▒▓▓▓████████▓▓▒▒░░    ',
+        '  ░░▒▒▓▓████████████████▓▓▒▒░░  ',
+        '░░▒▒▓▓████████████████████▓▓▒▒░░'
+      ],
+      chance: 0.2 // Huge
     },
     {
-      art: [' ░▒▓▒░ ', '░▒▓█▓▒░'],
-      chance: 0.4 // Medium
+      art: [
+        '    ░░▒▒▓▓▓▓▓▓▒▒░░    ',
+        '  ░░▒▓▓████████▓▓▒░░  ',
+        '░░▒▒▓▓████████████▓▓▒▒░░'
+      ],
+      chance: 0.3 // Large
     },
     {
-      art: '▒▓█',
-      chance: 0.4 // Small
+      art: [
+        '  ░░▒▓▓▓▓▒░░  ',
+        '░░▒▓▓████▓▓▒░░',
+        '░▒▓▓██████▓▓▒░'
+      ],
+      chance: 0.3 // Medium
+    },
+    {
+      art: [
+        '░░▒▓▓▓▒░░',
+        '░▒▓████▓▒░'
+      ],
+      chance: 0.2 // Small
     }
   ];
 
@@ -1352,13 +1200,6 @@ function init() {
     game.clouds.push(createNearCloud());
   }
 
-  // Spawn initial terrain elements
-  for (let i = 0; i < 10; i++) {
-    const terrainTypes = [createField, createForest, createHousing, createRanch, createHills];
-    const randomType = terrainTypes[Math.floor(Math.random() * terrainTypes.length)];
-    game.terrainElements.push(randomType());
-  }
-
   // Handle window resize
   window.addEventListener('resize', () => {
     updateCanvasSize();
@@ -1513,13 +1354,6 @@ function update(deltaTime) {
     }
   });
 
-  // Update terrain elements
-  game.terrainElements.forEach(terrain => {
-    if (terrain.active) {
-      terrain.update(deltaTime);
-    }
-  });
-
   // Handle collisions
   handleCollisions();
 
@@ -1529,7 +1363,6 @@ function update(deltaTime) {
   game.effects = game.effects.filter(e => e.active);
   game.particles = game.particles.filter(p => p.active);
   game.clouds = game.clouds.filter(c => c.active);
-  game.terrainElements = game.terrainElements.filter(t => t.active);
 
   // Enemy spawning
   game.enemySpawnTimer += deltaTime * 1000;
@@ -1551,27 +1384,6 @@ function update(deltaTime) {
     }
     game.cloudSpawnTimer = 0;
   }
-
-  // Terrain spawning
-  game.terrainSpawnTimer += deltaTime * 1000;
-  const terrainInterval = CONFIG.background.terrainSpawnInterval +
-                          (Math.random() - 0.5) * CONFIG.background.terrainSpawnVariance;
-  if (game.terrainSpawnTimer >= terrainInterval) {
-    // Weighted random terrain type selection
-    const rand = Math.random();
-    if (rand < 0.4) {
-      game.terrainElements.push(createField());
-    } else if (rand < 0.6) {
-      game.terrainElements.push(createForest());
-    } else if (rand < 0.75) {
-      game.terrainElements.push(createHills());
-    } else if (rand < 0.9) {
-      game.terrainElements.push(createHousing());
-    } else {
-      game.terrainElements.push(createRanch());
-    }
-    game.terrainSpawnTimer = 0;
-  }
 }
 
 // ============================================================================
@@ -1579,17 +1391,10 @@ function update(deltaTime) {
 // ============================================================================
 
 function render() {
-  // Render green terrain background
+  // Render sky gradient background
   if (game.background) {
     game.background.render();
   }
-
-  // Render terrain elements (ground features - fields, forests, etc.)
-  game.terrainElements.forEach(terrain => {
-    if (terrain.active) {
-      terrain.render(game.renderer);
-    }
-  });
 
   // Render far clouds (slower parallax layer)
   game.clouds.forEach(cloud => {
@@ -1648,7 +1453,6 @@ function render() {
     game.ctx.fillText(`Effects: ${game.effects.length}`, 10, 55);
     game.ctx.fillText(`Particles: ${game.particles.length}`, 10, 70);
     game.ctx.fillText(`Clouds: ${game.clouds.length}`, 10, 85);
-    game.ctx.fillText(`Terrain: ${game.terrainElements.length}`, 10, 100);
   }
 }
 
