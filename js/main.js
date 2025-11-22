@@ -1908,18 +1908,16 @@ async function init() {
   // Create audio manager
   game.audioManager = new AudioManager();
 
-  // Initialize audio on first user interaction
-  const initAudio = () => {
+  // Try to initialize audio immediately (will work on some browsers)
+  // If it fails, we'll retry on first user interaction in the game loop
+  try {
     game.audioManager.init();
-    // Start Level 1 music after audio is initialized
     if (game.audioManager.initialized) {
       game.audioManager.loadAndPlayMusic('/Raptorface - Cherryblossom.mp3');
     }
-    document.removeEventListener('keydown', initAudio);
-    document.removeEventListener('click', initAudio);
-  };
-  document.addEventListener('keydown', initAudio);
-  document.addEventListener('click', initAudio);
+  } catch (error) {
+    console.log('Audio autoplay blocked, will initialize on user interaction');
+  }
 
   // Create asset loader
   game.assetLoader = new AssetLoader();
