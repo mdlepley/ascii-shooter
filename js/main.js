@@ -360,10 +360,14 @@ const game = {
   effects: [],
   particles: [],
   clouds: [],
+  powerups: [],
   background: null,
   score: 0,
-  enemySpawnTimer: 0,
-  enemySpawnInterval: 2000, // milliseconds between enemy spawns
+  gameOver: false,
+  victory: false,
+  bossTriggered: false,
+  boss: null,
+  waveManager: null,
   cloudSpawnTimer: 0,
   assetLoader: null,
   assetsLoaded: false,
@@ -861,6 +865,88 @@ class Effect extends Entity {
 }
 
 // ============================================================================
+// POWER-UP SYSTEM
+// ============================================================================
+
+class PowerUp extends Entity {
+  constructor(x, y, type) {
+    super(x, y);
+    this.type = type;
+    this.vy = 80; // Slow downward movement
+    this.hitboxRadius = 10;
+    this.pulseTimer = 0;
+
+    // Configure based on type
+    switch (type) {
+      case 'health':
+        this.char = '+';
+        this.color = '#ff0000'; // Red cross
+        this.healAmount = 25;
+        break;
+      case 'health_large':
+        this.char = '♥';
+        this.color = '#ff69b4'; // Pink heart
+        this.healAmount = 50;
+        break;
+      case 'rocket_ammo':
+        this.char = 'R';
+        this.color = '#ffaa00'; // Orange
+        this.ammoAmount = 5;
+        break;
+      default:
+        this.char = '?';
+        this.color = '#ffffff';
+    }
+  }
+
+  update(deltaTime) {
+    // Move downward
+    this.y += this.vy * deltaTime;
+
+    // Pulse animation
+    this.pulseTimer += deltaTime * 5;
+
+    // Destroy if off screen
+    if (this.y > CONFIG.canvas.height + 50) {
+      this.destroy();
+    }
+  }
+
+  render(renderer) {
+    // Pulsing effect
+    const scale = 1 + Math.sin(this.pulseTimer) * 0.3;
+    const alpha = Math.floor((0.7 + Math.sin(this.pulseTimer) * 0.3) * 255).toString(16).padStart(2, '0');
+    const color = this.color + alpha;
+
+    renderer.drawTextCentered(this.char, this.x, this.y, color);
+  }
+
+  collect(player) {
+    switch (this.type) {
+      case 'health':
+      case 'health_large':
+        player.health = Math.min(player.maxHealth, player.health + this.healAmount);
+        player.updateHealthUI();
+        break;
+      case 'rocket_ammo':
+        player.rocketLauncher.ammo = Math.min(
+          player.rocketLauncher.maxAmmo,
+          player.rocketLauncher.ammo + this.ammoAmount
+        );
+        player.updateWeaponUI();
+        break;
+    }
+
+    // Play collection sound (simple beep)
+    if (game.audioManager && game.audioManager.initialized) {
+      game.audioManager.playLaserSound(1200, 0.1);
+    }
+
+    this.destroy();
+  }
+}
+
+// ============================================================================
 // EFFECT FACTORIES
 // ============================================================================
 
@@ -1194,6 +1280,10 @@ class Player extends Entity {
     this.health = 100;
     this.maxHealth = 100;
     this.hitboxRadius = this.calculateHitboxRadius();
+    this.lives = 3; // Starting lives from GDB
+    this.invulnerable = false;
+    this.invulnerabilityTimer = 0;
+    this.invulnerabilityDuration = 3000; // 3 seconds from GDB
 
     // Weapons
     this.weapons = [
@@ -1252,14 +1342,55 @@ class Player extends Entity {
   }
 
   takeDamage(amount) {
+    // Don't take damage if invulnerable
+    if (this.invulnerable) return;
+
     this.health -= amount;
     if (this.health <= 0) {
       this.health = 0;
-      // Create large explosion on player death
-      game.effects.push(createLargeExplosion(this.x, this.y));
-      this.destroy();
+      this.die();
     }
     this.updateHealthUI();
+  }
+
+  die() {
+    // Create large explosion on player death
+    game.effects.push(createLargeExplosion(this.x, this.y));
+
+    this.lives--;
+    this.updateLivesUI();
+
+    if (this.lives > 0) {
+      // Respawn after a delay
+      setTimeout(() => {
+        this.respawn();
+      }, 1000); // 1 second delay
+    } else {
+      // Game over
+      this.destroy();
+      game.gameOver = true;
+    }
+  }
+
+  respawn() {
+    // Reset position to start
+    this.x = CONFIG.canvas.width / 2;
+    this.y = CONFIG.canvas.height - 100;
+
+    // Reset health
+    this.health = this.maxHealth;
+    this.updateHealthUI();
+
+    // Grant invulnerability
+    this.invulnerable = true;
+    this.invulnerabilityTimer = 0;
+
+    // Reset velocity
+    this.vx = 0;
+    this.vy = 0;
+
+    // Make sure player is active
+    this.active = true;
   }
 
   updateHealthUI() {
@@ -1269,7 +1400,23 @@ class Player extends Entity {
     }
   }
 
+  updateLivesUI() {
+    const livesEl = document.querySelector('#lives span');
+    if (livesEl) {
+      livesEl.textContent = this.lives;
+    }
+  }
+
   update(deltaTime) {
+    // Update invulnerability timer
+    if (this.invulnerable) {
+      this.invulnerabilityTimer += deltaTime * 1000;
+      if (this.invulnerabilityTimer >= this.invulnerabilityDuration) {
+        this.invulnerable = false;
+        this.invulnerabilityTimer = 0;
+      }
+    }
+
     // Update position based on velocity
     this.x += this.vx * deltaTime;
     this.y += this.vy * deltaTime;
@@ -1291,6 +1438,13 @@ class Player extends Entity {
   }
 
   render(renderer) {
+    // Flash during invulnerability
+    if (this.invulnerable) {
+      const flashInterval = 100; // Flash every 100ms
+      const shouldShow = Math.floor(this.invulnerabilityTimer / flashInterval) % 2 === 0;
+      if (!shouldShow) return; // Skip rendering to create flash effect
+    }
+
     // Render ship
     renderer.drawMultiLine(this.art, this.x, this.y, this.color);
 
@@ -1434,6 +1588,20 @@ class Enemy extends Entity {
 
     // Create explosion effect
     game.effects.push(createSmallExplosion(this.x, this.y));
+
+    // Drop power-up based on drop table
+    if (this.dropTable) {
+      const roll = Math.random();
+      let cumulative = 0;
+
+      for (const [dropType, chance] of Object.entries(this.dropTable)) {
+        cumulative += chance;
+        if (roll <= cumulative && dropType !== 'nothing') {
+          game.powerups.push(new PowerUp(this.x, this.y, dropType));
+          break;
+        }
+      }
+    }
   }
 
   updateScoreUI() {
@@ -1470,6 +1638,13 @@ class Scout extends Enemy {
         aimAtPlayer: false      // fires straight down
       }
     });
+
+    // Drop table from GDB
+    this.dropTable = {
+      'health': 0.3,        // 30% chance
+      'rocket_ammo': 0.1,   // 10% chance
+      'nothing': 0.6        // 60% nothing
+    };
 
     // Sine wave movement parameters
     this.amplitude = 50;
@@ -1525,6 +1700,13 @@ class Gunship extends Enemy {
         burstDelay: 150         // milliseconds between burst shots
       }
     });
+
+    // Drop table from GDB
+    this.dropTable = {
+      'health_large': 0.2,    // 20% chance
+      'rocket_ammo': 0.3,     // 30% chance
+      'nothing': 0.5          // 50% nothing
+    };
 
     // Movement parameters
     this.descendTo = 150;       // Y position to stop at
@@ -1609,6 +1791,11 @@ class Kamikaze extends Enemy {
       scoreValue: 150,
       weapon: null  // No weapon - explodes on contact
     });
+
+    // Drop table from GDB (Kamikazes don't drop anything - they explode)
+    this.dropTable = {
+      'nothing': 1.0            // 100% nothing
+    };
 
     // Chase behavior parameters
     this.acceleration = 150;     // pixels per second squared
@@ -1697,6 +1884,365 @@ class Kamikaze extends Enemy {
         enemy.takeDamage(this.explosionDamage);
       }
     });
+  }
+}
+
+// ============================================================================
+// BOSS COMPONENTS
+// ============================================================================
+
+class BossTurret extends Entity {
+  constructor(x, y, boss) {
+    super(x, y);
+    this.type = 'boss_turret';
+    this.boss = boss;
+    this.art = '[O]';
+    this.color = '#ff0000';
+    this.health = 50;
+    this.maxHealth = 50;
+    this.hitboxRadius = 15;
+    this.fireRate = 1500;
+    this.lastFireTime = 0;
+    this.offsetX = 0; // Offset from boss center
+    this.offsetY = 0;
+  }
+
+  update(deltaTime) {
+    // Update position relative to boss
+    if (this.boss && this.boss.active) {
+      this.x = this.boss.x + this.offsetX;
+      this.y = this.boss.y + this.offsetY;
+
+      // Fire at player
+      const currentTime = performance.now();
+      if (currentTime - this.lastFireTime >= this.fireRate) {
+        this.fire();
+        this.lastFireTime = currentTime;
+      }
+    } else {
+      this.destroy();
+    }
+  }
+
+  fire() {
+    if (!game.player || !game.player.active) return;
+
+    // Aim at player
+    const dx = game.player.x - this.x;
+    const dy = game.player.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > 0) {
+      const vx = (dx / dist) * 350;
+      const vy = (dy / dist) * 350;
+
+      game.projectiles.push(new Projectile(this.x, this.y, {
+        vx,
+        vy,
+        char: '¦',
+        color: '#ff0000',
+        damage: 15,
+        hitboxRadius: 4,
+        owner: 'enemy'
+      }));
+    }
+  }
+
+  takeDamage(amount) {
+    this.health -= amount;
+    if (this.health <= 0) {
+      this.health = 0;
+      this.onDeath();
+      this.destroy();
+    }
+  }
+
+  onDeath() {
+    game.effects.push(createSmallExplosion(this.x, this.y));
+    game.score += 500;
+    const scoreEl = document.querySelector('#score span');
+    if (scoreEl) scoreEl.textContent = game.score;
+  }
+
+  render(renderer) {
+    if (this.health > 0) {
+      renderer.drawTextCentered(this.art, this.x, this.y, this.color);
+    }
+  }
+}
+
+// ============================================================================
+// LEVEL 1 BOSS - CRIMSON DREADNOUGHT
+// ============================================================================
+
+class CrimsonDreadnought extends Enemy {
+  constructor() {
+    super(CONFIG.canvas.width / 2, -200, {
+      art: [], // Will be built in constructor
+      color: '#cc0000',
+      health: 500,
+      speed: 40,
+      scoreValue: 10000
+    });
+
+    this.type = 'boss';
+    this.maxHealth = 500;
+    this.phase = 1;
+    this.entranceComplete = false;
+    this.targetY = 120;
+    this.hitboxRadius = 50;
+
+    // Boss art
+    this.art = [
+      '    ╔═══════════════════╗    ',
+      '    ║  DREADNOUGHT-01  ║    ',
+      '    ╚═══════════════════╝    ',
+      '  ╔═══╗═══════════════╔═══╗  ',
+      '  ║[O]║███████████████║[O]║  ',
+      '  ╚═══╝═══════════════╚═══╝  ',
+      '═══════════════════════════════',
+      '█████████████████████████████',
+      '═══════════════════════════════',
+      '      ║║║║║║║║║║║║║║║      '
+    ];
+
+    // Create turrets
+    this.turrets = [
+      this.createTurret(-80, 20),  // Left turret
+      this.createTurret(80, 20),   // Right turret
+      this.createTurret(0, 60)     // Bottom turret
+    ];
+
+    // Attack patterns
+    this.attackTimer = 0;
+    this.attackInterval = 3000;
+    this.spreadFireTimer = 0;
+    this.spreadFireInterval = 500;
+
+    // Show boss health bar
+    this.showHealthBar();
+  }
+
+  createTurret(offsetX, offsetY) {
+    const turret = new BossTurret(this.x + offsetX, this.y + offsetY, this);
+    turret.offsetX = offsetX;
+    turret.offsetY = offsetY;
+    game.enemies.push(turret);
+    return turret;
+  }
+
+  showHealthBar() {
+    const container = document.getElementById('boss-health-container');
+    if (container) {
+      container.style.display = 'block';
+    }
+    this.updateHealthBar();
+  }
+
+  hideHealthBar() {
+    const container = document.getElementById('boss-health-container');
+    if (container) {
+      container.style.display = 'none';
+    }
+  }
+
+  updateHealthBar() {
+    const fill = document.getElementById('boss-health-fill');
+    if (fill) {
+      const healthPercent = (this.health / this.maxHealth) * 100;
+      fill.style.width = healthPercent + '%';
+
+      // Color changes based on health
+      if (healthPercent > 66) {
+        fill.style.background = 'linear-gradient(90deg, #ff0000 0%, #ff6600 50%, #ff0000 100%)';
+      } else if (healthPercent > 33) {
+        fill.style.background = 'linear-gradient(90deg, #ff6600 0%, #ffaa00 50%, #ff6600 100%)';
+      } else {
+        fill.style.background = 'linear-gradient(90deg, #ffaa00 0%, #ffff00 50%, #ffaa00 100%)';
+      }
+    }
+  }
+
+  update(deltaTime) {
+    const currentTime = performance.now();
+
+    // Entrance sequence
+    if (!this.entranceComplete) {
+      this.y += this.speed * deltaTime;
+      if (this.y >= this.targetY) {
+        this.y = this.targetY;
+        this.entranceComplete = true;
+        console.log('Boss entrance complete!');
+      }
+      return;
+    }
+
+    // Update phase based on health
+    const healthPercent = (this.health / this.maxHealth) * 100;
+    if (healthPercent <= 33 && this.phase !== 3) {
+      this.phase = 3;
+      this.attackInterval = 1500; // Faster attacks
+      console.log('Boss Phase 3: CRITICAL');
+    } else if (healthPercent <= 66 && this.phase !== 2) {
+      this.phase = 2;
+      this.attackInterval = 2000;
+      console.log('Boss Phase 2: DAMAGED');
+    }
+
+    // Horizontal movement
+    const amplitude = 60;
+    const frequency = 0.5;
+    this.x = CONFIG.canvas.width / 2 + Math.sin(currentTime * 0.001 * frequency) * amplitude;
+
+    // Phase 1 & 2: Spread shot attacks
+    if (this.phase <= 2) {
+      this.spreadFireTimer += deltaTime * 1000;
+      if (this.spreadFireTimer >= this.spreadFireInterval) {
+        this.fireSpreadShot();
+        this.spreadFireTimer = 0;
+      }
+    }
+
+    // Phase 2 & 3: Aimed barrage
+    if (this.phase >= 2) {
+      this.attackTimer += deltaTime * 1000;
+      if (this.attackTimer >= this.attackInterval) {
+        this.fireBarrage();
+        this.attackTimer = 0;
+      }
+    }
+
+    // Phase 3: Spiral attack
+    if (this.phase === 3) {
+      if (Math.random() < 0.02) {
+        this.fireSpiralPattern();
+      }
+    }
+  }
+
+  fireSpreadShot() {
+    const spreadCount = 5;
+    const spreadAngle = Math.PI / 4; // 45 degrees
+    const speed = 300;
+
+    for (let i = 0; i < spreadCount; i++) {
+      const angle = Math.PI / 2 + (i - Math.floor(spreadCount / 2)) * (spreadAngle / spreadCount);
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+
+      game.projectiles.push(new Projectile(this.x, this.y + 80, {
+        vx,
+        vy,
+        char: '•',
+        color: '#ff0000',
+        damage: 12,
+        hitboxRadius: 3,
+        owner: 'enemy'
+      }));
+    }
+  }
+
+  fireBarrage() {
+    if (!game.player || !game.player.active) return;
+
+    for (let i = 0; i < 3; i++) {
+      setTimeout(() => {
+        const dx = game.player.x - this.x;
+        const dy = game.player.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 0) {
+          const vx = (dx / dist) * 400;
+          const vy = (dy / dist) * 400;
+
+          game.projectiles.push(new Projectile(this.x, this.y + 80, {
+            vx,
+            vy,
+            char: '◆',
+            color: '#ff6600',
+            damage: 20,
+            hitboxRadius: 4,
+            owner: 'enemy'
+          }));
+        }
+      }, i * 200);
+    }
+  }
+
+  fireSpiralPattern() {
+    const projectileCount = 8;
+    const speed = 250;
+    const offset = performance.now() * 0.001;
+
+    for (let i = 0; i < projectileCount; i++) {
+      const angle = (Math.PI * 2 * i / projectileCount) + offset;
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+
+      game.projectiles.push(new Projectile(this.x, this.y + 80, {
+        vx,
+        vy,
+        char: '*',
+        color: '#ffff00',
+        damage: 10,
+        hitboxRadius: 3,
+        owner: 'enemy'
+      }));
+    }
+  }
+
+  takeDamage(amount) {
+    this.health -= amount;
+    if (this.health <= 0) {
+      this.health = 0;
+      this.onDeath();
+    }
+    this.updateHealthBar();
+  }
+
+  onDeath() {
+    // Destroy all turrets
+    this.turrets.forEach(turret => {
+      if (turret && turret.active) {
+        turret.destroy();
+      }
+    });
+
+    // Hide health bar
+    this.hideHealthBar();
+
+    // Massive explosion sequence
+    for (let i = 0; i < 10; i++) {
+      setTimeout(() => {
+        const offsetX = (Math.random() - 0.5) * 100;
+        const offsetY = (Math.random() - 0.5) * 80;
+        game.effects.push(createLargeExplosion(this.x + offsetX, this.y + offsetY));
+      }, i * 200);
+    }
+
+    // Add score
+    game.score += this.scoreValue;
+    const scoreEl = document.querySelector('#score span');
+    if (scoreEl) scoreEl.textContent = game.score;
+
+    // Victory!
+    setTimeout(() => {
+      game.victory = true;
+      console.log('VICTORY! Boss defeated!');
+    }, 2000);
+
+    this.destroy();
+  }
+
+  render(renderer) {
+    // Flash when taking damage
+    const flashInterval = 100;
+    const shouldShow = Math.floor(performance.now() / flashInterval) % 2 === 0 ||
+                       this.health > this.maxHealth * 0.25;
+
+    if (shouldShow) {
+      renderer.drawMultiLine(this.art, this.x, this.y, this.color);
+    }
   }
 }
 
@@ -1950,8 +2496,13 @@ async function init() {
   // Create player
   game.player = new Player(CONFIG.canvas.width / 2, CONFIG.canvas.height - 100);
 
+  // Create wave manager
+  game.waveManager = new WaveManager();
+  game.waveManager.start();
+
   // Initialize UI
   game.player.updateHealthUI();
+  game.player.updateLivesUI();
   game.player.updateWeaponUI();
   const scoreEl = document.querySelector('#score span');
   if (scoreEl) {
@@ -2003,26 +2554,214 @@ function gameLoop(currentTime) {
 }
 
 // ============================================================================
-// ENEMY SPAWNING
+// WAVE SYSTEM
 // ============================================================================
 
-function spawnEnemy() {
-  // Spawn at random X position at top of screen
-  const x = Math.random() * (CONFIG.canvas.width - 100) + 50;
+const WAVE_DEFINITIONS = [
+  {
+    // Wave 1: Introduction - Scouts only
+    name: 'Wave 1',
+    enemies: [
+      { type: 'Scout', count: 6, interval: 1500, formation: 'single' }
+    ],
+    duration: 15000 // 15 seconds
+  },
+  {
+    // Wave 2: Mixed threat
+    name: 'Wave 2',
+    enemies: [
+      { type: 'Scout', count: 4, interval: 1200, formation: 'single' },
+      { type: 'Gunship', count: 2, interval: 3000, formation: 'single' }
+    ],
+    duration: 18000
+  },
+  {
+    // Wave 3: Kamikaze introduction
+    name: 'Wave 3',
+    enemies: [
+      { type: 'Scout', count: 3, interval: 1500, formation: 'single' },
+      { type: 'Kamikaze', count: 4, interval: 2000, formation: 'single' }
+    ],
+    duration: 16000
+  },
+  {
+    // Wave 4: Formation attacks
+    name: 'Wave 4',
+    enemies: [
+      { type: 'Scout', count: 6, interval: 800, formation: 'line' },
+      { type: 'Gunship', count: 2, interval: 4000, formation: 'single' }
+    ],
+    duration: 20000
+  },
+  {
+    // Wave 5: Intense finale before boss
+    name: 'Wave 5',
+    enemies: [
+      { type: 'Scout', count: 8, interval: 1000, formation: 'single' },
+      { type: 'Gunship', count: 3, interval: 3000, formation: 'single' },
+      { type: 'Kamikaze', count: 5, interval: 1800, formation: 'single' }
+    ],
+    duration: 25000
+  }
+];
 
-  // Randomly choose enemy type (60% Scout, 20% Gunship, 20% Kamikaze)
-  const rand = Math.random();
-  let enemy;
-
-  if (rand < 0.6) {
-    enemy = new Scout(x, -20);
-  } else if (rand < 0.8) {
-    enemy = new Gunship(x, -50);
-  } else {
-    enemy = new Kamikaze(x, -20);
+class WaveManager {
+  constructor() {
+    this.currentWaveIndex = 0;
+    this.waveStartTime = 0;
+    this.waveActive = false;
+    this.enemyGroups = [];
+    this.breakDuration = 3000; // 3 seconds between waves
+    this.inBreak = false;
+    this.breakStartTime = 0;
   }
 
-  game.enemies.push(enemy);
+  start() {
+    this.startWave();
+  }
+
+  startWave() {
+    if (this.currentWaveIndex >= WAVE_DEFINITIONS.length) {
+      // All waves complete - trigger boss
+      this.triggerBoss();
+      return;
+    }
+
+    const wave = WAVE_DEFINITIONS[this.currentWaveIndex];
+    this.waveActive = true;
+    this.waveStartTime = performance.now();
+    this.enemyGroups = [];
+
+    console.log(`Starting ${wave.name}`);
+
+    // Initialize enemy groups
+    wave.enemies.forEach(group => {
+      this.enemyGroups.push({
+        type: group.type,
+        count: group.count,
+        interval: group.interval,
+        formation: group.formation,
+        spawned: 0,
+        lastSpawnTime: 0
+      });
+    });
+  }
+
+  update(deltaTime) {
+    const currentTime = performance.now();
+
+    if (this.inBreak) {
+      // Check if break is over
+      if (currentTime - this.breakStartTime >= this.breakDuration) {
+        this.inBreak = false;
+        this.currentWaveIndex++;
+        this.startWave();
+      }
+      return;
+    }
+
+    if (!this.waveActive) return;
+
+    const wave = WAVE_DEFINITIONS[this.currentWaveIndex];
+    const waveElapsed = currentTime - this.waveStartTime;
+
+    // Spawn enemies from each group
+    this.enemyGroups.forEach(group => {
+      if (group.spawned >= group.count) return;
+
+      if (currentTime - group.lastSpawnTime >= group.interval) {
+        this.spawnEnemyGroup(group);
+        group.spawned++;
+        group.lastSpawnTime = currentTime;
+      }
+    });
+
+    // Check if wave is complete (duration elapsed and all enemies spawned)
+    const allSpawned = this.enemyGroups.every(g => g.spawned >= g.count);
+    if (allSpawned && waveElapsed >= wave.duration) {
+      this.endWave();
+    }
+  }
+
+  spawnEnemyGroup(group) {
+    switch (group.formation) {
+      case 'single':
+        this.spawnSingle(group.type);
+        break;
+      case 'line':
+        this.spawnLine(group.type);
+        break;
+      case 'v':
+        this.spawnVFormation(group.type);
+        break;
+    }
+  }
+
+  spawnSingle(type) {
+    const x = Math.random() * (CONFIG.canvas.width - 100) + 50;
+    this.spawnEnemyAt(type, x, -20);
+  }
+
+  spawnLine(type) {
+    // Spawn 3 enemies in a horizontal line
+    const spacing = 60;
+    const startX = CONFIG.canvas.width / 2 - spacing;
+
+    for (let i = 0; i < 3; i++) {
+      this.spawnEnemyAt(type, startX + (i * spacing), -20);
+    }
+  }
+
+  spawnVFormation(type) {
+    // Spawn 5 enemies in V formation
+    const centerX = CONFIG.canvas.width / 2;
+    const spacing = 50;
+
+    this.spawnEnemyAt(type, centerX, -20);
+    this.spawnEnemyAt(type, centerX - spacing, -40);
+    this.spawnEnemyAt(type, centerX + spacing, -40);
+    this.spawnEnemyAt(type, centerX - spacing * 2, -60);
+    this.spawnEnemyAt(type, centerX + spacing * 2, -60);
+  }
+
+  spawnEnemyAt(type, x, y) {
+    let enemy;
+    switch (type) {
+      case 'Scout':
+        enemy = new Scout(x, y);
+        break;
+      case 'Gunship':
+        enemy = new Gunship(x, y);
+        break;
+      case 'Kamikaze':
+        enemy = new Kamikaze(x, y);
+        break;
+    }
+    if (enemy) {
+      game.enemies.push(enemy);
+    }
+  }
+
+  endWave() {
+    this.waveActive = false;
+    this.inBreak = true;
+    this.breakStartTime = performance.now();
+
+    const wave = WAVE_DEFINITIONS[this.currentWaveIndex];
+    console.log(`${wave.name} complete! Break time...`);
+  }
+
+  triggerBoss() {
+    console.log('All waves complete! Boss incoming...');
+    game.bossTriggered = true;
+
+    // Spawn boss after a brief delay
+    setTimeout(() => {
+      game.boss = new CrimsonDreadnought();
+      game.enemies.push(game.boss);
+      console.log('BOSS FIGHT: Crimson Dreadnought has arrived!');
+    }, 2000);
+  }
 }
 
 // ============================================================================
@@ -2071,6 +2810,17 @@ function handleCollisions() {
         game.player.takeDamage(25);
         // Enemy explodes on contact (handled by enemy.destroy -> onDeath)
         enemy.takeDamage(enemy.health); // Instant kill
+      }
+    });
+  }
+
+  // Player vs PowerUps (collection)
+  if (game.player && game.player.active) {
+    game.powerups.forEach(powerup => {
+      if (!powerup.active) return;
+
+      if (game.player.collidesWith(powerup)) {
+        powerup.collect(game.player);
       }
     });
   }
@@ -2151,6 +2901,13 @@ function update(deltaTime) {
     }
   });
 
+  // Update powerups
+  game.powerups.forEach(powerup => {
+    if (powerup.active) {
+      powerup.update(deltaTime);
+    }
+  });
+
   // Handle collisions
   handleCollisions();
 
@@ -2160,12 +2917,11 @@ function update(deltaTime) {
   game.effects = game.effects.filter(e => e.active);
   game.particles = game.particles.filter(p => p.active);
   game.clouds = game.clouds.filter(c => c.active);
+  game.powerups = game.powerups.filter(p => p.active);
 
-  // Enemy spawning
-  game.enemySpawnTimer += deltaTime * 1000;
-  if (game.enemySpawnTimer >= game.enemySpawnInterval) {
-    spawnEnemy();
-    game.enemySpawnTimer = 0;
+  // Wave manager (handles enemy spawning)
+  if (game.waveManager && !game.bossTriggered) {
+    game.waveManager.update(deltaTime);
   }
 
   // Cloud spawning
@@ -2232,6 +2988,13 @@ function render() {
   game.projectiles.forEach(projectile => {
     if (projectile.active) {
       projectile.render(game.renderer);
+    }
+  });
+
+  // Render powerups
+  game.powerups.forEach(powerup => {
+    if (powerup.active) {
+      powerup.render(game.renderer);
     }
   });
 
