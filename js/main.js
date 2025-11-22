@@ -364,8 +364,8 @@ const game = {
   background: null,
   score: 0,
   gameOver: false,
-  enemySpawnTimer: 0,
-  enemySpawnInterval: 2000, // milliseconds between enemy spawns
+  bossTriggered: false,
+  waveManager: null,
   cloudSpawnTimer: 0,
   assetLoader: null,
   assetsLoaded: false,
@@ -2135,6 +2135,10 @@ async function init() {
   // Create player
   game.player = new Player(CONFIG.canvas.width / 2, CONFIG.canvas.height - 100);
 
+  // Create wave manager
+  game.waveManager = new WaveManager();
+  game.waveManager.start();
+
   // Initialize UI
   game.player.updateHealthUI();
   game.player.updateLivesUI();
@@ -2189,26 +2193,208 @@ function gameLoop(currentTime) {
 }
 
 // ============================================================================
-// ENEMY SPAWNING
+// WAVE SYSTEM
 // ============================================================================
 
-function spawnEnemy() {
-  // Spawn at random X position at top of screen
-  const x = Math.random() * (CONFIG.canvas.width - 100) + 50;
+const WAVE_DEFINITIONS = [
+  {
+    // Wave 1: Introduction - Scouts only
+    name: 'Wave 1',
+    enemies: [
+      { type: 'Scout', count: 6, interval: 1500, formation: 'single' }
+    ],
+    duration: 15000 // 15 seconds
+  },
+  {
+    // Wave 2: Mixed threat
+    name: 'Wave 2',
+    enemies: [
+      { type: 'Scout', count: 4, interval: 1200, formation: 'single' },
+      { type: 'Gunship', count: 2, interval: 3000, formation: 'single' }
+    ],
+    duration: 18000
+  },
+  {
+    // Wave 3: Kamikaze introduction
+    name: 'Wave 3',
+    enemies: [
+      { type: 'Scout', count: 3, interval: 1500, formation: 'single' },
+      { type: 'Kamikaze', count: 4, interval: 2000, formation: 'single' }
+    ],
+    duration: 16000
+  },
+  {
+    // Wave 4: Formation attacks
+    name: 'Wave 4',
+    enemies: [
+      { type: 'Scout', count: 6, interval: 800, formation: 'line' },
+      { type: 'Gunship', count: 2, interval: 4000, formation: 'single' }
+    ],
+    duration: 20000
+  },
+  {
+    // Wave 5: Intense finale before boss
+    name: 'Wave 5',
+    enemies: [
+      { type: 'Scout', count: 8, interval: 1000, formation: 'single' },
+      { type: 'Gunship', count: 3, interval: 3000, formation: 'single' },
+      { type: 'Kamikaze', count: 5, interval: 1800, formation: 'single' }
+    ],
+    duration: 25000
+  }
+];
 
-  // Randomly choose enemy type (60% Scout, 20% Gunship, 20% Kamikaze)
-  const rand = Math.random();
-  let enemy;
-
-  if (rand < 0.6) {
-    enemy = new Scout(x, -20);
-  } else if (rand < 0.8) {
-    enemy = new Gunship(x, -50);
-  } else {
-    enemy = new Kamikaze(x, -20);
+class WaveManager {
+  constructor() {
+    this.currentWaveIndex = 0;
+    this.waveStartTime = 0;
+    this.waveActive = false;
+    this.enemyGroups = [];
+    this.breakDuration = 3000; // 3 seconds between waves
+    this.inBreak = false;
+    this.breakStartTime = 0;
   }
 
-  game.enemies.push(enemy);
+  start() {
+    this.startWave();
+  }
+
+  startWave() {
+    if (this.currentWaveIndex >= WAVE_DEFINITIONS.length) {
+      // All waves complete - trigger boss
+      this.triggerBoss();
+      return;
+    }
+
+    const wave = WAVE_DEFINITIONS[this.currentWaveIndex];
+    this.waveActive = true;
+    this.waveStartTime = performance.now();
+    this.enemyGroups = [];
+
+    console.log(`Starting ${wave.name}`);
+
+    // Initialize enemy groups
+    wave.enemies.forEach(group => {
+      this.enemyGroups.push({
+        type: group.type,
+        count: group.count,
+        interval: group.interval,
+        formation: group.formation,
+        spawned: 0,
+        lastSpawnTime: 0
+      });
+    });
+  }
+
+  update(deltaTime) {
+    const currentTime = performance.now();
+
+    if (this.inBreak) {
+      // Check if break is over
+      if (currentTime - this.breakStartTime >= this.breakDuration) {
+        this.inBreak = false;
+        this.currentWaveIndex++;
+        this.startWave();
+      }
+      return;
+    }
+
+    if (!this.waveActive) return;
+
+    const wave = WAVE_DEFINITIONS[this.currentWaveIndex];
+    const waveElapsed = currentTime - this.waveStartTime;
+
+    // Spawn enemies from each group
+    this.enemyGroups.forEach(group => {
+      if (group.spawned >= group.count) return;
+
+      if (currentTime - group.lastSpawnTime >= group.interval) {
+        this.spawnEnemyGroup(group);
+        group.spawned++;
+        group.lastSpawnTime = currentTime;
+      }
+    });
+
+    // Check if wave is complete (duration elapsed and all enemies spawned)
+    const allSpawned = this.enemyGroups.every(g => g.spawned >= g.count);
+    if (allSpawned && waveElapsed >= wave.duration) {
+      this.endWave();
+    }
+  }
+
+  spawnEnemyGroup(group) {
+    switch (group.formation) {
+      case 'single':
+        this.spawnSingle(group.type);
+        break;
+      case 'line':
+        this.spawnLine(group.type);
+        break;
+      case 'v':
+        this.spawnVFormation(group.type);
+        break;
+    }
+  }
+
+  spawnSingle(type) {
+    const x = Math.random() * (CONFIG.canvas.width - 100) + 50;
+    this.spawnEnemyAt(type, x, -20);
+  }
+
+  spawnLine(type) {
+    // Spawn 3 enemies in a horizontal line
+    const spacing = 60;
+    const startX = CONFIG.canvas.width / 2 - spacing;
+
+    for (let i = 0; i < 3; i++) {
+      this.spawnEnemyAt(type, startX + (i * spacing), -20);
+    }
+  }
+
+  spawnVFormation(type) {
+    // Spawn 5 enemies in V formation
+    const centerX = CONFIG.canvas.width / 2;
+    const spacing = 50;
+
+    this.spawnEnemyAt(type, centerX, -20);
+    this.spawnEnemyAt(type, centerX - spacing, -40);
+    this.spawnEnemyAt(type, centerX + spacing, -40);
+    this.spawnEnemyAt(type, centerX - spacing * 2, -60);
+    this.spawnEnemyAt(type, centerX + spacing * 2, -60);
+  }
+
+  spawnEnemyAt(type, x, y) {
+    let enemy;
+    switch (type) {
+      case 'Scout':
+        enemy = new Scout(x, y);
+        break;
+      case 'Gunship':
+        enemy = new Gunship(x, y);
+        break;
+      case 'Kamikaze':
+        enemy = new Kamikaze(x, y);
+        break;
+    }
+    if (enemy) {
+      game.enemies.push(enemy);
+    }
+  }
+
+  endWave() {
+    this.waveActive = false;
+    this.inBreak = true;
+    this.breakStartTime = performance.now();
+
+    const wave = WAVE_DEFINITIONS[this.currentWaveIndex];
+    console.log(`${wave.name} complete! Break time...`);
+  }
+
+  triggerBoss() {
+    console.log('All waves complete! Boss incoming...');
+    // Boss spawn will be implemented next
+    game.bossTriggered = true;
+  }
 }
 
 // ============================================================================
@@ -2366,11 +2552,9 @@ function update(deltaTime) {
   game.clouds = game.clouds.filter(c => c.active);
   game.powerups = game.powerups.filter(p => p.active);
 
-  // Enemy spawning
-  game.enemySpawnTimer += deltaTime * 1000;
-  if (game.enemySpawnTimer >= game.enemySpawnInterval) {
-    spawnEnemy();
-    game.enemySpawnTimer = 0;
+  // Wave manager (handles enemy spawning)
+  if (game.waveManager && !game.bossTriggered) {
+    game.waveManager.update(deltaTime);
   }
 
   // Cloud spawning
