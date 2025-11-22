@@ -1,0 +1,38 @@
+{
+  "name": "scout",
+  "type": "enemy",
+  "version": "1.0",
+  "frames": [
+    {
+      "ascii": "{[::]}",
+      "width": 5,
+      "height": 1,
+      "color": "#ff3300",
+      "duration": 0
+    }
+  ],
+  "stats": {
+    "health": 10,
+    "speed": 120,
+    "scoreValue": 100
+  },
+  "movement": {
+    "type": "sine_wave",
+    "amplitude": 50,
+    "frequency": 2,
+    "baseSpeed": 120
+  },
+  "weapon": {
+    "projectileChar": "·",
+    "projectileColor": "#ffff00",
+    "fireRate": 2000,
+    "projectileSpeed": 300,
+    "damage": 10,
+    "aimAtPlayer": false
+  },
+  "metadata": {
+    "author": "Matt Lepley",
+    "created": "2025-11-22",
+    "notes": "Basic scout enemy with sine wave movement pattern"
+  }
+}

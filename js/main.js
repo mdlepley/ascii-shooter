@@ -4,6 +4,265 @@
  */
 
 // ============================================================================
+// AUDIO MANAGER (Web Audio API)
+// ============================================================================
+
+class AudioManager {
+  constructor() {
+    // Create audio context (handles browser prefixes)
+    this.ctx = null;
+    this.masterGain = null;
+    this.sfxGain = null;
+    this.musicGain = null;
+    this.enabled = true;
+    this.initialized = false;
+
+    // Volume settings from GDB
+    this.volumes = {
+      master: 0.7,
+      music: 0.4,
+      sfx: 0.8
+    };
+  }
+
+  /**
+   * Initialize audio context (must be called after user interaction)
+   */
+  init() {
+    if (this.initialized) return;
+
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AudioContext();
+
+      // Create gain nodes for volume control
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.gain.value = this.volumes.master;
+      this.masterGain.connect(this.ctx.destination);
+
+      this.sfxGain = this.ctx.createGain();
+      this.sfxGain.gain.value = this.volumes.sfx;
+      this.sfxGain.connect(this.masterGain);
+
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.value = this.volumes.music;
+      this.musicGain.connect(this.masterGain);
+
+      this.initialized = true;
+      console.log('Audio system initialized');
+    } catch (error) {
+      console.warn('Web Audio API not supported:', error);
+      this.enabled = false;
+    }
+  }
+
+  /**
+   * Play a synthesized laser sound (placeholder)
+   */
+  playLaserSound(frequency = 800, duration = 0.1) {
+    if (!this.enabled || !this.initialized) return;
+
+    const now = this.ctx.currentTime;
+    const oscillator = this.ctx.createOscillator();
+    const gainNode = this.ctx.createGain();
+
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(frequency, now);
+    oscillator.frequency.exponentialRampToValueAtTime(frequency * 0.5, now + duration);
+
+    gainNode.gain.setValueAtTime(0.3, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, now + duration);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(this.sfxGain);
+
+    oscillator.start(now);
+    oscillator.stop(now + duration);
+  }
+
+  /**
+   * Play a synthesized explosion sound (placeholder)
+   */
+  playExplosionSound(large = false) {
+    if (!this.enabled || !this.initialized) return;
+
+    const now = this.ctx.currentTime;
+    const duration = large ? 0.5 : 0.3;
+
+    // Use white noise for explosion effect
+    const bufferSize = this.ctx.sampleRate * duration;
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(large ? 200 : 400, now);
+
+    const gainNode = this.ctx.createGain();
+    gainNode.gain.setValueAtTime(large ? 0.5 : 0.3, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, now + duration);
+
+    noise.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(this.sfxGain);
+
+    noise.start(now);
+    noise.stop(now + duration);
+  }
+
+  /**
+   * Play a synthesized hit/impact sound (placeholder)
+   */
+  playHitSound() {
+    if (!this.enabled || !this.initialized) return;
+
+    const now = this.ctx.currentTime;
+    const duration = 0.1;
+    const oscillator = this.ctx.createOscillator();
+    const gainNode = this.ctx.createGain();
+
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(150, now);
+    oscillator.frequency.exponentialRampToValueAtTime(50, now + duration);
+
+    gainNode.gain.setValueAtTime(0.2, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, now + duration);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(this.sfxGain);
+
+    oscillator.start(now);
+    oscillator.stop(now + duration);
+  }
+
+  /**
+   * Play weapon switch sound
+   */
+  playWeaponSwitchSound() {
+    if (!this.enabled || !this.initialized) return;
+
+    const now = this.ctx.currentTime;
+    const duration = 0.15;
+    const oscillator = this.ctx.createOscillator();
+    const gainNode = this.ctx.createGain();
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(400, now);
+    oscillator.frequency.exponentialRampToValueAtTime(800, now + duration);
+
+    gainNode.gain.setValueAtTime(0.2, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, now + duration);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(this.sfxGain);
+
+    oscillator.start(now);
+    oscillator.stop(now + duration);
+  }
+
+  /**
+   * Set master volume
+   */
+  setMasterVolume(volume) {
+    this.volumes.master = Math.max(0, Math.min(1, volume));
+    if (this.masterGain) {
+      this.masterGain.gain.value = this.volumes.master;
+    }
+  }
+
+  /**
+   * Toggle mute
+   */
+  toggleMute() {
+    if (this.masterGain) {
+      this.masterGain.gain.value = this.masterGain.gain.value > 0 ? 0 : this.volumes.master;
+    }
+  }
+}
+
+// ============================================================================
+// ASSET LOADER
+// ============================================================================
+
+class AssetLoader {
+  constructor() {
+    this.assets = {};
+    this.loadedCount = 0;
+    this.totalCount = 0;
+  }
+
+  /**
+   * Load a JSON asset from a URL
+   * @param {string} name - Asset identifier
+   * @param {string} url - Path to JSON file
+   * @returns {Promise}
+   */
+  async loadAsset(name, url) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to load ${url}: ${response.statusText}`);
+      }
+      const data = await response.json();
+      this.assets[name] = data;
+      this.loadedCount++;
+      console.log(`Loaded asset: ${name}`);
+      return data;
+    } catch (error) {
+      console.warn(`Could not load asset ${name} from ${url}:`, error.message);
+      // Return null if asset doesn't exist yet
+      return null;
+    }
+  }
+
+  /**
+   * Load multiple assets
+   * @param {Object} assetMap - Object mapping asset names to URLs
+   * @returns {Promise}
+   */
+  async loadAssets(assetMap) {
+    this.totalCount = Object.keys(assetMap).length;
+    const promises = Object.entries(assetMap).map(([name, url]) =>
+      this.loadAsset(name, url)
+    );
+    await Promise.all(promises);
+    return this.assets;
+  }
+
+  /**
+   * Get a loaded asset by name
+   * @param {string} name - Asset identifier
+   * @returns {Object|null}
+   */
+  getAsset(name) {
+    return this.assets[name] || null;
+  }
+
+  /**
+   * Check if all assets are loaded
+   * @returns {boolean}
+   */
+  isReady() {
+    return this.loadedCount === this.totalCount;
+  }
+
+  /**
+   * Get loading progress
+   * @returns {number} Progress from 0 to 1
+   */
+  getProgress() {
+    return this.totalCount === 0 ? 1 : this.loadedCount / this.totalCount;
+  }
+}
+
+// ============================================================================
 // GAME CONFIGURATION (from Game Development Bible)
 // ============================================================================
 
@@ -60,7 +319,10 @@ const game = {
   score: 0,
   enemySpawnTimer: 0,
   enemySpawnInterval: 2000, // milliseconds between enemy spawns
-  cloudSpawnTimer: 0
+  cloudSpawnTimer: 0,
+  assetLoader: null,
+  assetsLoaded: false,
+  audioManager: null
 };
 
 // ============================================================================
@@ -245,6 +507,11 @@ class SniperLaser extends Weapon {
     // Add muzzle flash
     game.effects.push(createMuzzleFlash(x, y, this.config.projectileColor));
 
+    // Play laser sound
+    if (game.audioManager) {
+      game.audioManager.playLaserSound(800, 0.08);
+    }
+
     return [new Projectile(x, y - 10, {
       speed: this.config.projectileSpeed,
       char: this.config.projectileChar,
@@ -274,6 +541,11 @@ class VulcanCannon extends Weapon {
   createProjectiles(x, y) {
     // Add muzzle flash
     game.effects.push(createMuzzleFlash(x, y, this.config.projectileColor));
+
+    // Play vulcan sound (higher pitch, shorter)
+    if (game.audioManager) {
+      game.audioManager.playLaserSound(1200, 0.05);
+    }
 
     // Random horizontal spread
     const spreadOffset = (Math.random() - 0.5) * this.config.spread * 2;
@@ -548,6 +820,11 @@ class Effect extends Entity {
 // ============================================================================
 
 function createSmallExplosion(x, y) {
+  // Play explosion sound
+  if (game.audioManager) {
+    game.audioManager.playExplosionSound(false);
+  }
+
   return new Effect(x, y, {
     frames: [
       { char: '*', color: '#ffffff', duration: 50 },
@@ -569,6 +846,11 @@ function createSmallExplosion(x, y) {
 }
 
 function createLargeExplosion(x, y) {
+  // Play large explosion sound
+  if (game.audioManager) {
+    game.audioManager.playExplosionSound(true);
+  }
+
   return new Effect(x, y, {
     frames: [
       { char: '█', color: '#ffffff', duration: 60 },
@@ -590,6 +872,11 @@ function createLargeExplosion(x, y) {
 }
 
 function createImpactEffect(x, y) {
+  // Play hit sound
+  if (game.audioManager) {
+    game.audioManager.playHitSound();
+  }
+
   return new Effect(x, y, {
     frames: [
       { char: '*', color: '#ffffff', duration: 40 },
@@ -639,7 +926,12 @@ class Background {
     this.createGradient();
   }
 
+  update(deltaTime) {
+    // Background doesn't need updates (clouds handle their own scrolling)
+  }
+
   render() {
+    // Render sky gradient
     this.ctx.fillStyle = this.gradient;
     this.ctx.fillRect(0, 0, this.width, this.height);
   }
@@ -879,6 +1171,11 @@ class Player extends Entity {
   switchWeapon() {
     this.currentWeaponIndex = (this.currentWeaponIndex + 1) % this.weapons.length;
     this.updateWeaponUI();
+
+    // Play weapon switch sound
+    if (game.audioManager) {
+      game.audioManager.playWeaponSwitchSound();
+    }
   }
 
   updateWeaponUI() {
@@ -997,12 +1294,54 @@ class Enemy extends Entity {
     this.scoreValue = config.scoreValue || 100;
     this.speed = config.speed || 100;
 
+    // Weapon configuration
+    this.weapon = config.weapon || null;
+    this.lastFireTime = 0;
+
     // Calculate hitbox radius based on art if not provided
     if (config.hitboxRadius !== undefined) {
       this.hitboxRadius = config.hitboxRadius;
     } else {
       this.hitboxRadius = this.calculateHitboxRadius();
     }
+  }
+
+  canFire(currentTime) {
+    if (!this.weapon) return false;
+    return (currentTime - this.lastFireTime) >= this.weapon.fireRate;
+  }
+
+  fire(currentTime) {
+    if (!this.canFire(currentTime)) return [];
+    this.lastFireTime = currentTime;
+
+    const projectiles = [];
+    const config = {
+      speed: this.weapon.projectileSpeed,
+      char: this.weapon.projectileChar,
+      color: this.weapon.projectileColor,
+      damage: this.weapon.damage,
+      hitboxRadius: this.weapon.hitboxRadius || 3,
+      owner: 'enemy'
+    };
+
+    if (this.weapon.aimAtPlayer && game.player && game.player.active) {
+      // Aim at player
+      const dx = game.player.x - this.x;
+      const dy = game.player.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist > 0) {
+        config.vx = (dx / dist) * this.weapon.projectileSpeed;
+        config.vy = (dy / dist) * this.weapon.projectileSpeed;
+        projectiles.push(new Projectile(this.x, this.y + 10, config));
+      }
+    } else {
+      // Fire straight down
+      projectiles.push(new Projectile(this.x, this.y + 10, config));
+    }
+
+    return projectiles;
   }
 
   calculateHitboxRadius() {
@@ -1074,7 +1413,15 @@ class Scout extends Enemy {
       health: 10,
       // hitboxRadius auto-calculated from art
       speed: 120,
-      scoreValue: 100
+      scoreValue: 100,
+      weapon: {
+        projectileChar: '·',
+        projectileColor: '#ffff00',
+        fireRate: 2000,         // milliseconds
+        projectileSpeed: 300,   // pixels per second
+        damage: 10,
+        aimAtPlayer: false      // fires straight down
+      }
     });
 
     // Sine wave movement parameters
@@ -1095,10 +1442,214 @@ class Scout extends Enemy {
     // Move downward
     this.y += this.baseSpeed * deltaTime;
 
+    // Fire weapon
+    if (this.weapon) {
+      const projectiles = this.fire(performance.now());
+      game.projectiles.push(...projectiles);
+    }
+
     // Destroy if off screen
     if (this.y > CONFIG.canvas.height + 50) {
       this.destroy();
     }
+  }
+}
+
+class Gunship extends Enemy {
+  constructor(x, y) {
+    super(x, y, {
+      art: [
+        ' _||_ ',
+        '<||||>',
+        ' ‾||‾ '
+      ],
+      color: '#ff00ff',
+      health: 30,
+      speed: 60,
+      scoreValue: 250,
+      weapon: {
+        projectileChar: '¦',
+        projectileColor: '#ffff00',
+        fireRate: 1200,         // milliseconds
+        projectileSpeed: 400,
+        damage: 15,
+        aimAtPlayer: true,
+        burstCount: 3,
+        burstDelay: 150         // milliseconds between burst shots
+      }
+    });
+
+    // Movement parameters
+    this.descendTo = 150;       // Y position to stop at
+    this.hovering = false;
+    this.driftAmount = 20;      // pixels of drift
+    this.driftSpeed = 30;       // pixels per second
+    this.driftDirection = 1;
+    this.driftDistance = 0;
+    this.baseSpeed = 60;
+
+    // Burst fire tracking
+    this.burstShotsFired = 0;
+    this.lastBurstTime = 0;
+  }
+
+  update(deltaTime) {
+    // Descent phase
+    if (!this.hovering && this.y < this.descendTo) {
+      this.y += this.baseSpeed * deltaTime;
+      if (this.y >= this.descendTo) {
+        this.hovering = true;
+      }
+    }
+
+    // Hover and drift phase
+    if (this.hovering) {
+      // Drift left and right
+      const drift = this.driftSpeed * this.driftDirection * deltaTime;
+      this.x += drift;
+      this.driftDistance += Math.abs(drift);
+
+      // Reverse direction when reaching drift limit
+      if (this.driftDistance >= this.driftAmount) {
+        this.driftDirection *= -1;
+        this.driftDistance = 0;
+      }
+    }
+
+    // Burst fire weapon
+    if (this.weapon && this.hovering) {
+      const currentTime = performance.now();
+
+      // Check if we should start a new burst
+      if (this.burstShotsFired === 0 && this.canFire(currentTime)) {
+        this.lastFireTime = currentTime;
+        this.lastBurstTime = currentTime;
+        this.burstShotsFired = 1;
+
+        const projectiles = this.fire(currentTime);
+        game.projectiles.push(...projectiles);
+      }
+      // Continue burst
+      else if (this.burstShotsFired > 0 && this.burstShotsFired < this.weapon.burstCount) {
+        if (currentTime - this.lastBurstTime >= this.weapon.burstDelay) {
+          this.lastBurstTime = currentTime;
+          this.burstShotsFired++;
+
+          const projectiles = this.fire(currentTime);
+          game.projectiles.push(...projectiles);
+        }
+      }
+      // Reset burst counter
+      else if (this.burstShotsFired >= this.weapon.burstCount) {
+        this.burstShotsFired = 0;
+      }
+    }
+
+    // Destroy if off screen
+    if (this.y > CONFIG.canvas.height + 50) {
+      this.destroy();
+    }
+  }
+}
+
+class Kamikaze extends Enemy {
+  constructor(x, y) {
+    super(x, y, {
+      art: '(@@)',
+      color: '#ff6600',
+      health: 5,
+      speed: 200,
+      scoreValue: 150,
+      weapon: null  // No weapon - explodes on contact
+    });
+
+    // Chase behavior parameters
+    this.acceleration = 150;     // pixels per second squared
+    this.maxSpeed = 300;         // maximum speed
+    this.trackingStrength = 0.8; // how aggressively it tracks
+    this.vx = 0;
+    this.vy = 100;               // initial downward velocity
+
+    // Explosion parameters
+    this.explosionDamage = 25;
+    this.explosionRadius = 40;
+  }
+
+  update(deltaTime) {
+    if (!game.player || !game.player.active) {
+      // If no player, just move downward
+      this.y += this.vy * deltaTime;
+    } else {
+      // Chase player
+      const dx = game.player.x - this.x;
+      const dy = game.player.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist > 0) {
+        // Calculate desired velocity toward player
+        const targetVx = (dx / dist) * this.maxSpeed;
+        const targetVy = (dy / dist) * this.maxSpeed;
+
+        // Blend current velocity with target velocity
+        this.vx += (targetVx - this.vx) * this.trackingStrength * deltaTime;
+        this.vy += (targetVy - this.vy) * this.trackingStrength * deltaTime;
+
+        // Apply acceleration
+        const currentSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        const newSpeed = Math.min(currentSpeed + this.acceleration * deltaTime, this.maxSpeed);
+
+        if (currentSpeed > 0) {
+          const scale = newSpeed / currentSpeed;
+          this.vx *= scale;
+          this.vy *= scale;
+        }
+      }
+
+      // Update position
+      this.x += this.vx * deltaTime;
+      this.y += this.vy * deltaTime;
+    }
+
+    // Destroy if off screen
+    if (this.y > CONFIG.canvas.height + 50 || this.y < -50 ||
+        this.x < -50 || this.x > CONFIG.canvas.width + 50) {
+      this.destroy();
+    }
+  }
+
+  onDeath() {
+    // Create explosion effect
+    game.effects.push(createSmallExplosion(this.x, this.y));
+
+    // Add score
+    if (game.score !== undefined) {
+      game.score += this.scoreValue;
+      this.updateScoreUI();
+    }
+
+    // Damage player if close
+    if (game.player && game.player.active) {
+      const dx = game.player.x - this.x;
+      const dy = game.player.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < this.explosionRadius) {
+        game.player.takeDamage(this.explosionDamage);
+      }
+    }
+
+    // Damage nearby enemies (chain reaction)
+    game.enemies.forEach(enemy => {
+      if (enemy === this || !enemy.active) return;
+
+      const dx = enemy.x - this.x;
+      const dy = enemy.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < this.explosionRadius) {
+        enemy.takeDamage(this.explosionDamage);
+      }
+    });
   }
 }
 
@@ -1110,6 +1661,9 @@ class InputManager {
   constructor() {
     this.keys = {};
     this.previousKeys = {};
+    this.gamepadButtons = {};
+    this.previousGamepadButtons = {};
+    this.deadzone = 0.15; // Per GDB specification
     this.setupEventListeners();
   }
 
@@ -1126,6 +1680,24 @@ class InputManager {
     window.addEventListener('keyup', (e) => {
       this.keys[e.code] = false;
     });
+
+    // Gamepad connection events
+    window.addEventListener('gamepadconnected', (e) => {
+      console.log('Gamepad connected:', e.gamepad.id);
+    });
+
+    window.addEventListener('gamepaddisconnected', (e) => {
+      console.log('Gamepad disconnected:', e.gamepad.id);
+    });
+  }
+
+  getGamepad() {
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    // Return first connected gamepad
+    for (const gamepad of gamepads) {
+      if (gamepad) return gamepad;
+    }
+    return null;
   }
 
   isKeyDown(code) {
@@ -1136,28 +1708,87 @@ class InputManager {
     return this.keys[code] === true && this.previousKeys[code] !== true;
   }
 
+  isGamepadButtonDown(buttonIndex) {
+    return this.gamepadButtons[buttonIndex] === true;
+  }
+
+  wasGamepadButtonJustPressed(buttonIndex) {
+    return this.gamepadButtons[buttonIndex] === true &&
+           this.previousGamepadButtons[buttonIndex] !== true;
+  }
+
   update() {
     // Store previous key states for just-pressed detection
     this.previousKeys = { ...this.keys };
+    this.previousGamepadButtons = { ...this.gamepadButtons };
+
+    // Update gamepad state
+    const gamepad = this.getGamepad();
+    if (gamepad) {
+      // Update button states
+      gamepad.buttons.forEach((button, index) => {
+        this.gamepadButtons[index] = button.pressed;
+      });
+    }
   }
 
   getMovementVector() {
     let dx = 0;
     let dy = 0;
 
+    // Keyboard input
     if (this.isKeyDown('KeyW')) dy -= 1;
     if (this.isKeyDown('KeyS')) dy += 1;
     if (this.isKeyDown('KeyA')) dx -= 1;
     if (this.isKeyDown('KeyD')) dx += 1;
 
+    // Gamepad input (left stick or D-pad)
+    const gamepad = this.getGamepad();
+    if (gamepad) {
+      // Left stick (axes 0 and 1)
+      const leftStickX = gamepad.axes[0] || 0;
+      const leftStickY = gamepad.axes[1] || 0;
+
+      // Apply deadzone
+      if (Math.abs(leftStickX) > this.deadzone) {
+        dx += leftStickX;
+      }
+      if (Math.abs(leftStickY) > this.deadzone) {
+        dy += leftStickY;
+      }
+
+      // D-pad (buttons 12-15 on standard gamepad)
+      if (gamepad.buttons[12]?.pressed) dy -= 1; // Up
+      if (gamepad.buttons[13]?.pressed) dy += 1; // Down
+      if (gamepad.buttons[14]?.pressed) dx -= 1; // Left
+      if (gamepad.buttons[15]?.pressed) dx += 1; // Right
+    }
+
     // Normalize diagonal movement
-    if (dx !== 0 && dy !== 0) {
-      const magnitude = Math.sqrt(dx * dx + dy * dy);
+    const magnitude = Math.sqrt(dx * dx + dy * dy);
+    if (magnitude > 1) {
       dx /= magnitude;
       dy /= magnitude;
     }
 
     return { dx, dy };
+  }
+
+  // Check if shoot button is pressed (Space or A button)
+  isShootPressed() {
+    return this.isKeyDown('Space') || this.isGamepadButtonDown(0); // A button
+  }
+
+  // Check if weapon switch was just pressed (E or X button)
+  wasWeaponSwitchPressed() {
+    return this.wasKeyJustPressed('KeyE') || this.wasGamepadButtonJustPressed(2); // X button
+  }
+
+  // Check if special weapon was just pressed (R or RT)
+  wasSpecialWeaponPressed() {
+    return this.wasKeyJustPressed('KeyR') ||
+           this.wasGamepadButtonJustPressed(7) || // RT button (some gamepads)
+           this.wasGamepadButtonJustPressed(6);   // LT button alternative
   }
 }
 
@@ -1202,7 +1833,7 @@ function updateCanvasSize() {
 // GAME INITIALIZATION
 // ============================================================================
 
-function init() {
+async function init() {
   // Get canvas and context
   game.canvas = document.getElementById('game-canvas');
   game.ctx = game.canvas.getContext('2d');
@@ -1214,6 +1845,37 @@ function init() {
 
   // Set initial canvas size
   updateCanvasSize();
+
+  // Create audio manager
+  game.audioManager = new AudioManager();
+
+  // Initialize audio on first user interaction
+  const initAudio = () => {
+    game.audioManager.init();
+    document.removeEventListener('keydown', initAudio);
+    document.removeEventListener('click', initAudio);
+  };
+  document.addEventListener('keydown', initAudio);
+  document.addEventListener('click', initAudio);
+
+  // Create asset loader
+  game.assetLoader = new AssetLoader();
+
+  // Try to load JSON assets (gracefully handles missing files)
+  // These will be created in Milestone 3 with the asset editor
+  const assetPaths = {
+    'player_ship': '/assets/sprites/player/player_ship.json',
+    'scout': '/assets/sprites/enemies/scout.json',
+    'gunship': '/assets/sprites/enemies/gunship.json',
+    'kamikaze': '/assets/sprites/enemies/kamikaze.json'
+  };
+
+  console.log('Attempting to load JSON assets...');
+  await game.assetLoader.loadAssets(assetPaths);
+  game.assetsLoaded = true;
+
+  // Note: Assets are currently hardcoded. When JSON assets are available,
+  // entities can be created from the loaded data using assetLoader.getAsset(name)
 
   // Create background
   game.background = new Background(game.ctx, CONFIG.canvas.width, CONFIG.canvas.height);
@@ -1252,6 +1914,7 @@ function init() {
   requestAnimationFrame(gameLoop);
 
   console.log('Game initialized - Canvas mode');
+  console.log('Asset loader ready. Assets can be imported from JSON files.');
 }
 
 // ============================================================================
@@ -1285,7 +1948,19 @@ function gameLoop(currentTime) {
 function spawnEnemy() {
   // Spawn at random X position at top of screen
   const x = Math.random() * (CONFIG.canvas.width - 100) + 50;
-  const enemy = new Scout(x, -20);
+
+  // Randomly choose enemy type (60% Scout, 20% Gunship, 20% Kamikaze)
+  const rand = Math.random();
+  let enemy;
+
+  if (rand < 0.6) {
+    enemy = new Scout(x, -20);
+  } else if (rand < 0.8) {
+    enemy = new Gunship(x, -50);
+  } else {
+    enemy = new Kamikaze(x, -20);
+  }
+
   game.enemies.push(enemy);
 }
 
@@ -1310,6 +1985,21 @@ function handleCollisions() {
       }
     });
   });
+
+  // Enemy projectiles vs Player
+  if (game.player && game.player.active) {
+    game.projectiles.forEach(projectile => {
+      if (!projectile.active || projectile.owner !== 'enemy') return;
+
+      if (projectile.collidesWith(game.player)) {
+        // Create impact effect
+        game.effects.push(createImpactEffect(projectile.x, projectile.y));
+
+        game.player.takeDamage(projectile.damage);
+        projectile.destroy();
+      }
+    });
+  }
 
   // Player vs Enemies (collision damage)
   if (game.player && game.player.active) {
@@ -1336,19 +2026,19 @@ function update(deltaTime) {
   const movement = game.input.getMovementVector();
   game.player.move(movement.dx, movement.dy);
 
-  // Handle shooting
-  if (game.input.isKeyDown('Space')) {
+  // Handle shooting (keyboard or gamepad)
+  if (game.input.isShootPressed()) {
     const projectiles = game.player.fire(performance.now());
     game.projectiles.push(...projectiles);
   }
 
-  // Handle weapon switching
-  if (game.input.wasKeyJustPressed('KeyE')) {
+  // Handle weapon switching (keyboard or gamepad)
+  if (game.input.wasWeaponSwitchPressed()) {
     game.player.switchWeapon();
   }
 
-  // Handle rocket firing
-  if (game.input.wasKeyJustPressed('KeyR')) {
+  // Handle rocket firing (keyboard or gamepad)
+  if (game.input.wasSpecialWeaponPressed()) {
     const projectiles = game.player.fireRocket(performance.now());
     game.projectiles.push(...projectiles);
     game.player.updateWeaponUI();
@@ -1356,6 +2046,11 @@ function update(deltaTime) {
 
   // Update input state
   game.input.update();
+
+  // Update background
+  if (game.background) {
+    game.background.update(deltaTime);
+  }
 
   // Update player
   game.player.update(deltaTime);

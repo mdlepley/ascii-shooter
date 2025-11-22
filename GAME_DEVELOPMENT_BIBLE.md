@@ -78,7 +78,6 @@
 1. **Sky Layer** - Light blue gradient (#87CEEB to #4682B4)
 2. **Cloud Layer (Far)** - Large, slow-moving clouds using `░▒▓` characters
 3. **Cloud Layer (Near)** - Faster, puffier clouds for depth
-4. **Ground Layer** - Distant green fields (subtle, far below)
 
 **Atmosphere:**
 - Peaceful beginning that contrasts with incoming enemy forces
@@ -687,17 +686,6 @@ With Thrust (animated - alternates every 100ms):
       "density": 0.2,
       "yRange": [100, 400],
       "zIndex": 2
-    },
-    {
-      "name": "Ground Layer",
-      "type": "ascii_pattern",
-      "pattern": "═≡-",
-      "color": "#228b22",
-      "highlightColor": "#32cd32",
-      "scrollSpeed": 80,
-      "yPosition": 550,
-      "parallaxDepth": 0.9,
-      "zIndex": 3
     }
   ]
 }
